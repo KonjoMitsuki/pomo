@@ -274,8 +274,8 @@ async def add(ctx, user: discord.Member):
     targets.add(user.id)
     await ctx.send(f"✅ {ctx.author.mention} のタイマー対象に {user.mention} を追加しました。")
 
-@bot.command()
-async def list(ctx):
+@bot.command(name="list")
+async def list_targets(ctx):
     """加算対象ユーザーの一覧を表示します（!list）"""
     targets = timer_targets.get(ctx.author.id, set())
     if not targets:
