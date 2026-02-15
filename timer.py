@@ -320,32 +320,91 @@ async def test(ctx):
     if ctx.author.voice:
         # 1. 接続
         vc = await ctx.author.voice.channel.connect()
-        
+
         # ★重要: 接続が安定するまで少し待つ（これを入れないと頭切れします）
         await asyncio.sleep(1.5)
 
         if os.path.exists("ding.mp3"):
             print("ファイルを検出しました。再生を開始します...")
-            
+
             # 2. 再生
             # options="-loglevel panic" はログを綺麗にするためですが、なくても動きます
             vc.play(discord.FFmpegPCMAudio("ding.mp3"))
-            
+
             # 再生中ループ
             while vc.is_playing():
                 await asyncio.sleep(1)
-            
+
             print("再生が終了しました。")
-            
+
             # ★重要: 余韻のため少し待ってから切断
             await asyncio.sleep(1.0)
-            
+
             await vc.disconnect()
         else:
             await ctx.send("❌ ding.mp3 が見つかりません！")
             await vc.disconnect()
     else:
         await ctx.send("ボイスチャンネルに入ってからコマンドを打ってください。")
+
+@bot.command(name="help")
+async def help_command(ctx):
+    """ボットの使い方を表示します"""
+    embed = discord.Embed(
+        title="🍅 Pomodoro Bot コマンド一覧",
+        description="ポモドーロタイマーを使って作業時間を管理しましょう！",
+        color=discord.Color.red()
+    )
+
+    embed.add_field(
+        name="!pomo [作業時間] [小休憩] [長休憩] [長休憩頻度]",
+        value="ポモドーロタイマーを開始します。\n"
+              "デフォルト: `!pomo 25 5 15 4`\n"
+              "例: `!pomo 50 10 20 4` → 50分作業、10分小休憩、20分長休憩、4回ごと\n"
+              "※事前にボイスチャンネルに参加してください。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!add @user",
+        value="指定ユーザーをあなたのタイマー対象に追加します。\n"
+              "作業セッション完了時、同じボイスチャンネルにいる対象ユーザーの記録が加算されます。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!list",
+        value="現在の加算対象ユーザー一覧を表示します。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!remove @user",
+        value="指定ユーザーを加算対象から削除します。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!stats",
+        value="あなたの累計作業時間と完了セッション数を表示します。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!test",
+        value="ボイスチャンネルに接続して音声ファイルを再生するテストを行います。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!help",
+        value="このヘルプメッセージを表示します。",
+        inline=False
+    )
+
+    embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️ボタンが使用できます。")
+
+    await ctx.send(embed=embed)
 
 # 環境変数からトークンを取得（セキュリティ向上）
 token = os.getenv('DISCORD_BOT_TOKEN')
