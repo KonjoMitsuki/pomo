@@ -8,7 +8,7 @@ import os
 # Botの設定
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 # 音声ファイルのパス（同じフォルダに ding.mp3 を置いてください）
 SOUND_FILE = "ding.mp3"
