@@ -308,12 +308,29 @@ async def stats(ctx):
     async with aiosqlite.connect(DB_FILE) as db:
         async with db.execute("SELECT total_minutes, sessions FROM stats WHERE user_id = ?", (ctx.author.id,)) as cursor:
             row = await cursor.fetchone()
-            
+
     if row:
         minutes, sessions = row
         await ctx.send(f"📊 **{ctx.author.display_name} さんの記録**\n累計作業時間: {minutes}分\n完了セッション: {sessions}回")
     else:
         await ctx.send("まだ記録がありません。!pomo で作業を始めましょう！")
+
+@bot.command()
+async def reset(ctx):
+    """自分の累計作業時間をリセットします"""
+    async with aiosqlite.connect(DB_FILE) as db:
+        async with db.execute("SELECT total_minutes, sessions FROM stats WHERE user_id = ?", (ctx.author.id,)) as cursor:
+            row = await cursor.fetchone()
+
+        if not row:
+            await ctx.send("リセットする記録がありません。")
+            return
+
+        minutes, sessions = row
+        await db.execute("DELETE FROM stats WHERE user_id = ?", (ctx.author.id,))
+        await db.commit()
+
+    await ctx.send(f"🔄 **{ctx.author.display_name} さんの記録をリセットしました**\n削除された記録: {minutes}分 / {sessions}セッション")
 
 @bot.command()
 async def test(ctx):
@@ -387,6 +404,12 @@ async def help_command(ctx):
     embed.add_field(
         name="!stats",
         value="あなたの累計作業時間と完了セッション数を表示します。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!reset",
+        value="あなたの累計作業時間と完了セッション数をリセット（削除）します。",
         inline=False
     )
 

@@ -14,6 +14,7 @@ Discordのボイスチャンネルで動作するポモドーロタイマーボ�
 ## 必要なもの
 
 ### ファイル
+
 - `timer.py` - メインプログラム
 - `ding.mp3` - 通知音（同じディレクトリに配置）
 - `pomo.db` - 統計データベース（自動生成）ここ
@@ -44,11 +45,13 @@ brew install ffmpeg
 Discordボットトークンを環境変数に設定します。
 
 **方法1: 一時的に設定（そのターミナルセッションのみ有効）**
+
 ```bash
 export DISCORD_BOT_TOKEN='your_token_here'
 ```
 
 **方法2: 永続的に設定（推奨）**
+
 ```bash
 # bashの場合
 echo "export DISCORD_BOT_TOKEN='your_token_here'" >> ~/.bashrc
@@ -60,6 +63,7 @@ source ~/.zshrc
 ```
 
 **方法3: .envファイルを使用**
+
 ```bash
 # .env ファイルを作成
 echo "DISCORD_BOT_TOKEN=your_token_here" > .env
@@ -75,6 +79,7 @@ python timer.py
 ```
 
 起動成功時のメッセージ:
+
 ```
 〜としてログインしました。
 ```
@@ -86,17 +91,20 @@ python timer.py
 #### `!pomo` - ポモドーロタイマー開始
 
 **基本構文:**
+
 ```
 !pomo [作業時間] [小休憩] [長休憩] [長休憩頻度]
 ```
 
 **パラメータ:**
+
 1. 作業時間（分）- デフォルト: 25
 2. 小休憩時間（分）- デフォルト: 5
 3. 長休憩時間（分）- デフォルト: 15
 4. 長休憩の頻度（セッション数）- デフォルト: 4
 
 **使用例:**
+
 ```bash
 !pomo                    # 25分作業、5分小休憩、15分長休憩、4回ごと
 !pomo 50                 # 50分作業、他はデフォルト
@@ -107,6 +115,7 @@ python timer.py
 ```
 
 **動作:**
+
 1. ボイスチャンネルに参加してからコマンド実行
 2. ボットが自動的にボイスチャンネルに接続
 3. 作業セッション開始
@@ -126,8 +135,22 @@ python timer.py
 ```
 
 **表示内容:**
+
 - 累計作業時間（分）
 - 完了セッション数
+
+#### `!reset` - 統計リセット
+
+自分の累計作業時間と完了セッション数をリセット（削除）します。
+
+```bash
+!reset
+```
+
+**動作:**
+
+- 現在の記録を表示してから削除
+- 記録がない場合はメッセージを表示
 
 #### `!test` - 音声テスト
 
@@ -209,27 +232,33 @@ CREATE TABLE stats (
 ### 音声が聞こえない・再生されない
 
 **1. FFmpegがインストールされているか確認**
+
 ```bash
 ffmpeg -version
 ```
 
 **2. ding.mp3ファイルが存在するか確認**
+
 ```bash
 ls -l ding.mp3
 ```
 
 **3. テストコマンドで音声再生をテスト**
+
 ```bash
 !test
 ```
+
 このコマンドで音声が聞こえるか確認してください。
 
 **4. ボットがボイスチャンネルに正しく接続されているか確認**
+
 - Discordでボットがボイスチャンネルに参加しているか確認
 - ボット側のログに接続エラーがないか確認
 
 **5. 音量設定を調整**
 音が小さい場合は、`timer.py`の音量設定を変更できます:
+
 ```python
 # timer.py の150行目付近と203行目付近
 options='-filter:a "volume=2.0"'  # 2.0を3.0や4.0に変更
@@ -238,15 +267,18 @@ options='-filter:a "volume=2.0"'  # 2.0を3.0や4.0に変更
 ### ボットが起動しない
 
 **1. 環境変数が設定されているか確認**
+
 ```bash
 echo $DISCORD_BOT_TOKEN
 ```
+
 何も表示されない場合は環境変数が設定されていません。
 
 **2. トークンが正しいか確認**
 Discord Developer Portalでトークンを確認してください。
 
 **3. 依存ライブラリがインストールされているか確認**
+
 ```bash
 pip list | grep discord
 pip list | grep aiosqlite
@@ -306,6 +338,7 @@ options='-filter:a "volume=2.0"'
 ```
 
 `volume=2.0`の数値を変更:
+
 - `1.0` - 元の音量
 - `2.0` - 2倍
 - `3.0` - 3倍
@@ -328,6 +361,7 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
 ```
 
 例: デフォルトを50分作業に変更
+
 ```python
 async def pomo(ctx, work_minutes: int = 50, short_break: int = 10, long_break: int = 20, long_break_interval: int = 4):
 ```
