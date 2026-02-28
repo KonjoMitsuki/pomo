@@ -189,6 +189,7 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         "long_break_interval": long_break_interval,
         "session_count": 0,
         "session_work": {},  # user_id -> 今回のタイマーでの作業分数
+        "muted": False,
     }
 
     # 起動者または参加者がボイスチャンネルにいる限り繰り返す
@@ -281,8 +282,8 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             view=None
         )
 
-        # 音声を再生（音量を2倍に増幅）
-        if voice_client and voice_client.is_connected():
+        # 音声を再生
+        if voice_client and voice_client.is_connected() and not active_timers.get(ctx.author.id, {}).get("muted"):
             if os.path.exists(SOUND_FILE):
                 # 既に再生中の場合は停止
                 if voice_client.is_playing():
@@ -353,8 +354,8 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                 view=None
             )
 
-            # 音声を再生（音量を2倍に増幅）
-            if voice_client and voice_client.is_connected():
+            # 音声を再生
+            if voice_client and voice_client.is_connected() and not active_timers.get(ctx.author.id, {}).get("muted"):
                 if os.path.exists(SOUND_FILE):
                     if voice_client.is_playing():
                         voice_client.stop()
@@ -512,7 +513,31 @@ async def timer_info(ctx):
     await ctx.send(embed=embed)
 
 @bot.command()
+async def mute(ctx):
+    """タイマーの通知音をミュート/ミュート解除します"""
+    # コマンド実行者が起動者または参加者であるタイマーを探す
+    timer_author_id = None
+    for author_id, info in active_timers.items():
+        targets = {author_id} | timer_targets.get(author_id, set())
+        if ctx.author.id in targets:
+            timer_author_id = author_id
+            break
+
+    if timer_author_id is None:
+        await ctx.send("ℹ️ 現在アクティブなタイマーに参加していません。")
+        return
+
+    info = active_timers[timer_author_id]
+    info["muted"] = not info["muted"]
+
+    if info["muted"]:
+        await ctx.send("🔇 通知音をミュートしました。")
+    else:
+        await ctx.send("🔊 通知音のミュートを解除しました。")
+
+@bot.command()
 async def test(ctx):
+    """ボイスチャンネルで音声再生テストを行います"""
     if ctx.author.voice:
         # 1. 接続
         vc = await ctx.author.voice.channel.connect()
@@ -598,6 +623,13 @@ async def help_command(ctx):
     embed.add_field(
         name="!reset",
         value="あなたの累計作業時間をリセットします。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!mute",
+        value="タイマーの通知音をミュート/ミュート解除します。\n"
+              "もう一度実行するとミュート解除されます。",
         inline=False
     )
 
