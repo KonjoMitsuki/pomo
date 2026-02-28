@@ -17,6 +17,9 @@ DB_FILE = "pomo.db"
 # タイマーごとの加算対象（コマンド実行者ID -> set(ユーザーID)）
 timer_targets = {}
 
+# アクティブなタイマー情報（コマンド実行者ID -> dict）
+active_timers = {}
+
 # データベースの初期化
 async def init_db():
     async with aiosqlite.connect(DB_FILE) as db:
@@ -38,8 +41,9 @@ class PomoView(View):
         self.stopped = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # コマンド実行者のみがボタンを押せるように制限
-        return interaction.user.id == self.author_id
+        # コマンド実行者または参加者がボタンを押せる
+        allowed_ids = {self.author_id} | timer_targets.get(self.author_id, set())
+        return interaction.user.id in allowed_ids
 
     @discord.ui.button(label="一時停止", style=discord.ButtonStyle.secondary, emoji="⏸️")
     async def pause_button(self, interaction: discord.Interaction, button: Button):
@@ -61,10 +65,93 @@ class PomoView(View):
         await interaction.response.edit_message(content="⏹️ タイマーを終了しました。", view=None)
         self.stop()
 
+# 参加ボタンUIの定義
+class JoinView(View):
+    def __init__(self, author_id):
+        super().__init__(timeout=None)
+        self.author_id = author_id
+
+    @discord.ui.button(label="参加", style=discord.ButtonStyle.primary, emoji="🙋")
+    async def join_button(self, interaction: discord.Interaction, button: Button):
+        user = interaction.user
+        # Botと起動者自身は対象外
+        if user.bot or user.id == self.author_id:
+            await interaction.response.send_message("⚠️ 起動者は既に参加しています。", ephemeral=True)
+            return
+
+        targets = timer_targets.setdefault(self.author_id, set())
+        if user.id in targets:
+            await interaction.response.send_message(f"ℹ️ {user.mention} は既に参加しています。", ephemeral=True)
+            return
+
+        targets.add(user.id)
+        await interaction.response.send_message(f"🙋 {user.mention} が参加しました！")
+
+        # ボタンのメッセージを更新して現在の参加者を表示
+        target_line = get_target_line(self.author_id, interaction.guild)
+        await interaction.message.edit(
+            content=f"🛑 **<@{self.author_id}> のタイマー**\n対象: {target_line}\n参加するには下のボタンを押してください。",
+            view=self
+        )
+
+    @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary, emoji="👋")
+    async def leave_button(self, interaction: discord.Interaction, button: Button):
+        user = interaction.user
+        if user.bot or user.id == self.author_id:
+            await interaction.response.send_message("⚠️ 起動者は退出できません。", ephemeral=True)
+            return
+
+        targets = timer_targets.get(self.author_id, set())
+        if user.id not in targets:
+            await interaction.response.send_message(f"ℹ️ {user.mention} は参加していません。", ephemeral=True)
+            return
+
+        targets.discard(user.id)
+        await interaction.response.send_message(f"👋 {user.mention} が退出しました。")
+
+        # ボタンのメッセージを更新して現在の参加者を表示
+        target_line = get_target_line(self.author_id, interaction.guild)
+        await interaction.message.edit(
+            content=f"🛑 **<@{self.author_id}> のタイマー**\n対象: {target_line}\n参加するには下のボタンを押してください。",
+            view=self
+        )
+
+
+def get_target_line(author_id, guild=None):
+    """起動者と参加者のメンション文字列を構築する"""
+    mentions = [f"<@{author_id}>"]
+    extra_ids = timer_targets.get(author_id, set())
+    if extra_ids:
+        mentions += [f"<@{user_id}>" for user_id in extra_ids]
+    return " ".join(mentions)
+
+
+def has_active_members(voice_client, author_id):
+    """ボットのVCに起動者または参加者が残っているかチェック"""
+    if not voice_client or not voice_client.is_connected():
+        return False
+    vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
+    targets = {author_id} | timer_targets.get(author_id, set())
+    return bool(vc_member_ids & targets)
+
+
 @bot.event
 async def on_ready():
     await init_db()
     print(f"{bot.user} としてログインしました。")
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """参加者がVCから退出したら timer_targets から除外する"""
+    # チャンネルが変わっていない場合は無視（ミュート切替など）
+    if before.channel == after.channel:
+        return
+
+    # VCから退出した、または別のチャンネルに移動した場合
+    if before.channel is not None:
+        for author_id, targets in timer_targets.items():
+            if member.id in targets and member.id != author_id:
+                targets.discard(member.id)
 
 @bot.command()
 async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: int = 15, long_break_interval: int = 4):
@@ -87,19 +174,30 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         return
 
     session_count = 0
-    control_msg = await ctx.send(f"🛑 **{ctx.author.mention} のタイマー**\nポモドーロを終了する場合は、ボイスチャンネルから退出してください。")
+    join_view = JoinView(ctx.author.id)
+    target_line = get_target_line(ctx.author.id)
+    control_msg = await ctx.send(
+        f"🛑 **{ctx.author.mention} のタイマー**\n対象: {target_line}\n参加するには下のボタンを押してください。",
+        view=join_view
+    )
 
-    # ユーザーがボイスチャンネルにいる限り繰り返す
-    while ctx.author.voice and ctx.author.voice.channel:
+    # アクティブタイマー情報を登録
+    active_timers[ctx.author.id] = {
+        "work_minutes": work_minutes,
+        "short_break": short_break,
+        "long_break": long_break,
+        "long_break_interval": long_break_interval,
+        "session_count": 0,
+        "session_work": {},  # user_id -> 今回のタイマーでの作業分数
+    }
+
+    # 起動者または参加者がボイスチャンネルにいる限り繰り返す
+    while has_active_members(voice_client, ctx.author.id):
         session_count += 1
 
         # 作業タイマー
         view = PomoView(ctx.author.id)
-        target_mentions = [ctx.author.mention]
-        extra_ids = timer_targets.get(ctx.author.id, set())
-        if extra_ids:
-            target_mentions += [f"<@{user_id}>" for user_id in extra_ids]
-        target_line = " ".join(target_mentions)
+        target_line = get_target_line(ctx.author.id)
 
         msg = await ctx.send(
             f"🍅 **{ctx.author.mention} のセッション {session_count} 開始！** ({work_minutes}分)\n"
@@ -111,14 +209,18 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
 
         # 作業タイマーのメインループ
         while remaining_seconds > 0:
-            # ユーザーがVCから退出したかチェック
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                await msg.edit(content="⏹️ ユーザーが退出したため終了しました。", view=None)
+            # 起動者・参加者が全員VCから退出したかチェック
+            if not has_active_members(voice_client, ctx.author.id):
+                await msg.edit(content="⏹️ 全員が退出したため終了しました。", view=None)
+                timer_targets.pop(ctx.author.id, None)
+                active_timers.pop(ctx.author.id, None)
                 if voice_client: await voice_client.disconnect()
                 return
 
             if view.stopped:
                 await control_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！")
+                timer_targets.pop(ctx.author.id, None)
+                active_timers.pop(ctx.author.id, None)
                 if voice_client: await voice_client.disconnect()
                 return
 
@@ -134,10 +236,17 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
 
         # 作業完了 - データベースへ記録（追加された対象 + 実行者、同じVC内のみ）
         member_ids = []
-        if ctx.author.voice and ctx.author.voice.channel:
-            vc_member_ids = {m.id for m in ctx.author.voice.channel.members if not m.bot}
+        if voice_client and voice_client.is_connected():
+            vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
             targets = set(timer_targets.get(ctx.author.id, set())) | {ctx.author.id}
             member_ids = list(vc_member_ids & targets)
+
+        # アクティブタイマー情報を更新
+        timer_info = active_timers.get(ctx.author.id)
+        if timer_info:
+            timer_info["session_count"] = session_count
+            for uid in member_ids:
+                timer_info["session_work"][uid] = timer_info["session_work"].get(uid, 0) + work_minutes
 
         async with aiosqlite.connect(DB_FILE) as db:
             if member_ids:
@@ -166,7 +275,8 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         await msg.edit(
             content=(
                 f"🎉 **{ctx.author.mention} のセッション {session_count} 完了！** "
-                f"{work_minutes}分の作業が終わりました。\n💤 {break_type} {break_time}分を開始します..."
+                f"{work_minutes}分の作業が終わりました。\n"
+                f"対象: {target_line}\n💤 {break_type} {break_time}分を開始します..."
             ),
             view=None
         )
@@ -198,21 +308,26 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             break_view = PomoView(ctx.author.id)
             emoji = "☕" if is_long_break else "💤"
             break_msg = await ctx.send(
-                f"{emoji} **{ctx.author.mention} の{break_type}！** ({break_time}分)\nリラックスしましょう！",
+                f"{emoji} **{ctx.author.mention} の{break_type}！** ({break_time}分)\n"
+                f"対象: {target_line}\nリラックスしましょう！",
                 view=break_view
             )
 
             remaining_seconds = break_time * 60
 
             while remaining_seconds > 0:
-                # ユーザーがVCから退出したかチェック
-                if not ctx.author.voice or not ctx.author.voice.channel:
-                    await break_msg.edit(content="⏹️ ユーザーが退出したため終了しました。", view=None)
+                # 起動者・参加者が全員VCから退出したかチェック
+                if not has_active_members(voice_client, ctx.author.id):
+                    await break_msg.edit(content="⏹️ 全員が退出したため終了しました。", view=None)
+                    timer_targets.pop(ctx.author.id, None)
+                    active_timers.pop(ctx.author.id, None)
                     if voice_client: await voice_client.disconnect()
                     return
 
                 if break_view.stopped:
                     await control_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！")
+                    timer_targets.pop(ctx.author.id, None)
+                    active_timers.pop(ctx.author.id, None)
                     if voice_client: await voice_client.disconnect()
                     return
 
@@ -227,14 +342,14 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                     await break_msg.edit(
                         content=(
                             f"{emoji} **{ctx.author.mention} の残り {remaining_seconds // 60} 分** "
-                            f"({break_type})\nリラックスしましょう！"
+                            f"({break_type})\n対象: {target_line}\nリラックスしましょう！"
                         ),
                         view=break_view
                     )
 
             # 休憩終了
             await break_msg.edit(
-                content=f"⏰ **{ctx.author.mention} の{break_type}終了！** 次のセッションを始めましょう。",
+                content=f"⏰ **{ctx.author.mention} の{break_type}終了！** 次のセッションを始めましょう。\n対象: {target_line}",
                 view=None
             )
 
@@ -258,9 +373,14 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         # 短い待機時間を入れて次のセッションへ
         await asyncio.sleep(2)
 
-    # ループ終了（ユーザーがVCから退出）
+    # ループ終了（全員がVCから退出）
+    target_line = get_target_line(ctx.author.id)
+    timer_targets.pop(ctx.author.id, None)
+    active_timers.pop(ctx.author.id, None)
+
     await control_msg.edit(
-        content=f"🎉 **{ctx.author.mention} のポモドーロ終了！** 合計 {session_count} セッション完了しました。お疲れ様でした！"
+        content=f"🎉 **ポモドーロ終了！** 合計 {session_count} セッション完了しました。お疲れ様でした！\n対象: {target_line}",
+        view=None
     )
 
 @bot.command()
@@ -332,6 +452,65 @@ async def reset(ctx):
 
     await ctx.send(f"🔄 **{ctx.author.display_name} さんの記録をリセットしました**\n削除された記録: {minutes}分 / {sessions}セッション")
 
+@bot.command(name="timer")
+async def timer_info(ctx):
+    """現在のタイマー情報を表示します"""
+    # コマンド実行者が起動者または参加者であるタイマーを探す
+    timer_author_id = None
+    for author_id, info in active_timers.items():
+        targets = {author_id} | timer_targets.get(author_id, set())
+        if ctx.author.id in targets:
+            timer_author_id = author_id
+            break
+
+    if timer_author_id is None:
+        await ctx.send("ℹ️ 現在アクティブなタイマーに参加していません。")
+        return
+
+    info = active_timers[timer_author_id]
+    session_count = info["session_count"]
+    work_minutes = info["work_minutes"]
+    short_break = info["short_break"]
+    long_break = info["long_break"]
+    long_break_interval = info["long_break_interval"]
+    session_work = info["session_work"]
+
+    # 全参加者の合計作業時間
+    total_work = sum(session_work.values())
+
+    embed = discord.Embed(
+        title="🍅 タイマー情報",
+        color=discord.Color.red()
+    )
+
+    embed.add_field(
+        name="タイマー設定",
+        value=f"作業: {work_minutes}分 / 小休憩: {short_break}分 / 長休憩: {long_break}分 / 長休憩頻度: {long_break_interval}回ごと",
+        inline=False
+    )
+
+    embed.add_field(
+        name="進捗",
+        value=f"完了セッション: {session_count}回\n合計作業時間: {total_work}分",
+        inline=False
+    )
+
+    # 参加者一覧と各自の作業時間
+    all_ids = {timer_author_id} | timer_targets.get(timer_author_id, set())
+    participant_lines = []
+    for uid in all_ids:
+        minutes = session_work.get(uid, 0)
+        label = "（起動者）" if uid == timer_author_id else ""
+        participant_lines.append(f"<@{uid}>{label}: {minutes}分")
+
+    embed.add_field(
+        name=f"参加者 ({len(all_ids)}人)",
+        value="\n".join(participant_lines),
+        inline=False
+    )
+
+    await ctx.send(embed=embed)
+
 @bot.command()
 async def test(ctx):
     if ctx.author.voice:
@@ -378,7 +557,8 @@ async def help_command(ctx):
         value="ポモドーロタイマーを開始します。\n"
               "デフォルト: `!pomo 25 5 15 4`\n"
               "例: `!pomo 50 10 20 4` → 50分作業、10分小休憩、20分長休憩、4回ごと\n"
-              "※事前にボイスチャンネルに参加してください。",
+              "※事前にボイスチャンネルに参加してください。\n"
+              "※他のユーザーは表示される「参加」ボタンを押して参加できます。",
         inline=False
     )
 
@@ -408,6 +588,13 @@ async def help_command(ctx):
     )
 
     embed.add_field(
+        name="!timer",
+        value="現在のタイマー情報を表示します。\n"
+              "タイマー設定、完了セッション数、参加者ごとの作業時間を確認できます。",
+        inline=False
+    )
+
+    embed.add_field(
         name="!reset",
         value="あなたの累計作業時間と完了セッション数をリセット（削除）します。",
         inline=False
@@ -425,7 +612,7 @@ async def help_command(ctx):
         inline=False
     )
 
-    embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️ボタンが使用できます。")
+    embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️ボタンが使用できます。\n他のユーザーは🙋参加ボタンで参加/退出できます。")
 
     await ctx.send(embed=embed)
 
