@@ -41,7 +41,7 @@ class PomoView(View):
         self.stopped = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # コマンド実行者または参加者がボタンを押せる
+        # 起動者または参加者がボタンを押せる
         allowed_ids = {self.author_id} | timer_targets.get(self.author_id, set())
         return interaction.user.id in allowed_ids
 
@@ -74,8 +74,21 @@ class JoinView(View):
     @discord.ui.button(label="参加", style=discord.ButtonStyle.primary, emoji="🙋")
     async def join_button(self, interaction: discord.Interaction, button: Button):
         user = interaction.user
-        # Botと起動者自身は対象外
-        if user.bot or user.id == self.author_id:
+        if user.bot:
+            return
+
+        # 起動者の場合：退出済みなら再参加を許可
+        if user.id == self.author_id:
+            timer_info = active_timers.get(self.author_id)
+            if timer_info and timer_info.get("author_left"):
+                timer_info["author_left"] = False
+                await interaction.response.send_message(f"🙋 {user.mention}（起動者）が再参加しました！")
+                target_line = get_target_line(self.author_id, interaction.guild)
+                await interaction.message.edit(
+                    content=f"🛑 **<@{self.author_id}> のタイマー**\n対象: {target_line}\n参加するには下のボタンを押してください。",
+                    view=self
+                )
+                return
             await interaction.response.send_message("⚠️ 起動者は既に参加しています。", ephemeral=True)
             return
 
@@ -97,11 +110,25 @@ class JoinView(View):
     @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary, emoji="👋")
     async def leave_button(self, interaction: discord.Interaction, button: Button):
         user = interaction.user
-        if user.bot or user.id == self.author_id:
-            await interaction.response.send_message("⚠️ 起動者は退出できません。", ephemeral=True)
+        if user.bot:
             return
 
         targets = timer_targets.get(self.author_id, set())
+
+        # 起動者の場合
+        if user.id == self.author_id:
+            timer_info = active_timers.get(self.author_id)
+            if timer_info:
+                timer_info["author_left"] = True
+            await interaction.response.send_message(f"👋 {user.mention}（起動者）が退出しました。タイマーは参加者がいる限り継続します。")
+            # ボタンのメッセージを更新して現在の参加者を表示
+            target_line = get_target_line(self.author_id, interaction.guild)
+            await interaction.message.edit(
+                content=f"🛑 **<@{self.author_id}> のタイマー**\n対象: {target_line}\n参加するには下のボタンを押してください。",
+                view=self
+            )
+            return
+
         if user.id not in targets:
             await interaction.response.send_message(f"ℹ️ {user.mention} は参加していません。", ephemeral=True)
             return
@@ -150,7 +177,7 @@ async def on_voice_state_update(member, before, after):
     # VCから退出した、または別のチャンネルに移動した場合
     if before.channel is not None:
         for author_id, targets in timer_targets.items():
-            if member.id in targets and member.id != author_id:
+            if member.id in targets:
                 targets.discard(member.id)
 
 @bot.command()
@@ -190,6 +217,7 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         "session_count": 0,
         "session_work": {},  # user_id -> 今回のタイマーでの作業分数
         "muted": False,
+        "author_left": False,  # 起動者が退出したかどうか
     }
 
     # 起動者または参加者がボイスチャンネルにいる限り繰り返す
@@ -235,11 +263,14 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             if remaining_seconds % 60 == 0 and remaining_seconds != 0:
                 await msg.edit(content=f"🍅 **残り {remaining_seconds // 60} 分** (セッション {session_count})\n集中しましょう！", view=view)
 
-        # 作業完了 - データベースへ記録（追加された対象 + 実行者、同じVC内のみ）
+        # 作業完了 - データベースへ記録（VCにいる かつ タイマーリストに残っている人が対象）
         member_ids = []
         if voice_client and voice_client.is_connected():
             vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
-            targets = set(timer_targets.get(ctx.author.id, set())) | {ctx.author.id}
+            targets = set(timer_targets.get(ctx.author.id, set()))
+            author_left = active_timers.get(ctx.author.id, {}).get("author_left", False)
+            if not author_left:
+                targets.add(ctx.author.id)
             member_ids = list(vc_member_ids & targets)
 
         # アクティブタイマー情報を更新
@@ -258,20 +289,14 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                     total_minutes = total_minutes + ?,
                     sessions = sessions + 1
                 """, [(user_id, work_minutes, work_minutes) for user_id in member_ids])
-            else:
-                await db.execute("""
-                    INSERT INTO stats (user_id, total_minutes, sessions)
-                    VALUES (?, ?, 1)
-                    ON CONFLICT(user_id) DO UPDATE SET
-                    total_minutes = total_minutes + ?,
-                    sessions = sessions + 1
-                """, (ctx.author.id, work_minutes, work_minutes))
             await db.commit()
 
         # 長休憩か小休憩か判定
         is_long_break = (session_count % long_break_interval == 0)
         break_time = long_break if is_long_break else short_break
         break_type = "長休憩" if is_long_break else "小休憩"
+
+        target_line = get_target_line(ctx.author.id)
 
         await msg.edit(
             content=(
@@ -340,6 +365,7 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                 remaining_seconds -= 1
 
                 if remaining_seconds % 60 == 0 and remaining_seconds != 0:
+                    target_line = get_target_line(ctx.author.id)
                     await break_msg.edit(
                         content=(
                             f"{emoji} **{ctx.author.mention} の残り {remaining_seconds // 60} 分** "
@@ -349,6 +375,7 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                     )
 
             # 休憩終了
+            target_line = get_target_line(ctx.author.id)
             await break_msg.edit(
                 content=f"⏰ **{ctx.author.mention} の{break_type}終了！** 次のセッションを始めましょう。\n対象: {target_line}",
                 view=None
