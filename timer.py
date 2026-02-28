@@ -558,32 +558,8 @@ async def help_command(ctx):
               "デフォルト: `!pomo 25 5 15 4`\n"
               "例: `!pomo 50 10 20 4` → 50分作業、10分小休憩、20分長休憩、4回ごと\n"
               "※事前にボイスチャンネルに参加してください。\n"
-              "※他のユーザーは表示される「参加」ボタンを押して参加できます。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!add @user",
-        value="指定ユーザーをあなたのタイマー対象に追加します。\n"
-              "作業セッション完了時、同じボイスチャンネルにいる対象ユーザーの記録が加算されます。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!list",
-        value="現在の加算対象ユーザー一覧を表示します。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!remove @user",
-        value="指定ユーザーを加算対象から削除します。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!stats",
-        value="あなたの累計作業時間と完了セッション数を表示します。",
+              "※他のユーザーは🙋参加 / 👋退出ボタンで参加・退出できます。\n"
+              "※起動者が退出しても参加者がVCにいればタイマーは継続します。",
         inline=False
     )
 
@@ -595,14 +571,39 @@ async def help_command(ctx):
     )
 
     embed.add_field(
+        name="!add @user",
+        value="指定ユーザーをあなたのタイマー対象に追加します。\n"
+              "※参加ボタンからも追加できます。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!remove @user",
+        value="指定ユーザーを加算対象から削除します。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!list",
+        value="現在の加算対象ユーザー一覧を表示します。",
+        inline=False
+    )
+
+    embed.add_field(
+        name="!stats",
+        value="あなたの累計作業時間と完了セッション数を表示します。",
+        inline=False
+    )
+
+    embed.add_field(
         name="!reset",
-        value="あなたの累計作業時間と完了セッション数をリセット（削除）します。",
+        value="あなたの累計作業時間をリセットします。",
         inline=False
     )
 
     embed.add_field(
         name="!test",
-        value="ボイスチャンネルに接続して音声ファイルを再生するテストを行います。",
+        value="ボイスチャンネルで音声再生テストを行います。",
         inline=False
     )
 
@@ -612,7 +613,7 @@ async def help_command(ctx):
         inline=False
     )
 
-    embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️ボタンが使用できます。\n他のユーザーは🙋参加ボタンで参加/退出できます。")
+    embed.set_footer(text="タイマー中は起動者・参加者が一時停止⏸️・再開▶️・終了⏹️ボタンを使用できます。")
 
     await ctx.send(embed=embed)
 
