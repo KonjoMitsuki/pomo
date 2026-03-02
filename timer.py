@@ -270,6 +270,8 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             f"対象: {target_line}\n集中しましょう！",
             view=view
         )
+        active_timers[ctx.author.id]["pomo_view"] = view
+        active_timers[ctx.author.id]["pomo_msg"] = msg
 
         # 古い参加パネルを無効化し、新しいパネルをセットで送信
         old_join_msg = active_timers[ctx.author.id].get("control_msg")
@@ -290,22 +292,32 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
 
         # 作業タイマーのメインループ
         while remaining_seconds > 0:
+            if ctx.author.id not in active_timers:
+                return
+            cur_view = active_timers[ctx.author.id]["pomo_view"]
+            cur_msg = active_timers[ctx.author.id]["pomo_msg"]
+
             # ホスト・参加者が全員VCから退出したかチェック
             if not has_active_members(voice_client, ctx.author.id):
-                await msg.edit(content="⏹️ 全員が退出したため終了しました。", view=None)
+                await cur_msg.edit(content="⏹️ 全員が退出したため終了しました。", view=None)
                 timer_targets.pop(ctx.author.id, None)
                 active_timers.pop(ctx.author.id, None)
                 if voice_client: await voice_client.disconnect()
                 return
 
-            if view.stopped:
-                await control_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！")
+            if cur_view.stopped:
+                join_msg = active_timers[ctx.author.id].get("control_msg")
+                if join_msg:
+                    try:
+                        await join_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！", view=None)
+                    except Exception:
+                        pass
                 timer_targets.pop(ctx.author.id, None)
                 active_timers.pop(ctx.author.id, None)
                 if voice_client: await voice_client.disconnect()
                 return
 
-            if view.paused:
+            if cur_view.paused:
                 await asyncio.sleep(1)
                 continue
 
@@ -313,7 +325,9 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             remaining_seconds -= 1
 
             if remaining_seconds % 60 == 0 and remaining_seconds != 0:
-                await msg.edit(content=f"🍅 **残り {remaining_seconds // 60} 分** (セッション {session_count})\n集中しましょう！", view=view)
+                cur_view = active_timers[ctx.author.id]["pomo_view"]
+                cur_msg = active_timers[ctx.author.id]["pomo_msg"]
+                await cur_msg.edit(content=f"🍅 **残り {remaining_seconds // 60} 分** (セッション {session_count})\n集中しましょう！", view=cur_view)
 
         # 作業完了 - データベースへ記録（VCにいる かつ タイマーリストに残っている人が対象）
         member_ids = []
@@ -389,6 +403,8 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                 f"対象: {target_line}\nリラックスしましょう！",
                 view=break_view
             )
+            active_timers[ctx.author.id]["pomo_view"] = break_view
+            active_timers[ctx.author.id]["pomo_msg"] = break_msg
 
             # 古い参加パネルを無効化し、新しいパネルをセットで送信
             old_join_msg = active_timers[ctx.author.id].get("control_msg")
@@ -408,22 +424,32 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             remaining_seconds = break_time * 60
 
             while remaining_seconds > 0:
+                if ctx.author.id not in active_timers:
+                    return
+                cur_view = active_timers[ctx.author.id]["pomo_view"]
+                cur_msg = active_timers[ctx.author.id]["pomo_msg"]
+
                 # ホスト・参加者が全員VCから退出したかチェック
                 if not has_active_members(voice_client, ctx.author.id):
-                    await break_msg.edit(content="⏹️ 全員が退出したため終了しました。", view=None)
+                    await cur_msg.edit(content="⏹️ 全員が退出したため終了しました。", view=None)
                     timer_targets.pop(ctx.author.id, None)
                     active_timers.pop(ctx.author.id, None)
                     if voice_client: await voice_client.disconnect()
                     return
 
-                if break_view.stopped:
-                    await control_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！")
+                if cur_view.stopped:
+                    join_msg = active_timers[ctx.author.id].get("control_msg")
+                    if join_msg:
+                        try:
+                            await join_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！", view=None)
+                        except Exception:
+                            pass
                     timer_targets.pop(ctx.author.id, None)
                     active_timers.pop(ctx.author.id, None)
                     if voice_client: await voice_client.disconnect()
                     return
 
-                if break_view.paused:
+                if cur_view.paused:
                     await asyncio.sleep(1)
                     continue
 
@@ -433,18 +459,21 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                 if remaining_seconds % 60 == 0 and remaining_seconds != 0:
                     host_id = active_timers.get(ctx.author.id, {}).get("host_id", ctx.author.id)
                     target_line = get_target_line(ctx.author.id)
-                    await break_msg.edit(
+                    cur_view = active_timers[ctx.author.id]["pomo_view"]
+                    cur_msg = active_timers[ctx.author.id]["pomo_msg"]
+                    await cur_msg.edit(
                         content=(
                             f"{emoji} **<@{host_id}> の残り {remaining_seconds // 60} 分** "
                             f"({break_type})\n対象: {target_line}\nリラックスしましょう！"
                         ),
-                        view=break_view
+                        view=cur_view
                     )
 
             # 休憩終了
             host_id = active_timers.get(ctx.author.id, {}).get("host_id", ctx.author.id)
             target_line = get_target_line(ctx.author.id)
-            await break_msg.edit(
+            cur_msg = active_timers.get(ctx.author.id, {}).get("pomo_msg", break_msg)
+            await cur_msg.edit(
                 content=f"⏰ **<@{host_id}> の{break_type}終了！** 次のセッションを始めましょう。\n対象: {target_line}",
                 view=None
             )
@@ -644,7 +673,20 @@ async def timer_info(ctx):
 
     await ctx.send(embed=embed)
 
-    # 古いコントロールパネルを無効化し、最新の位置に再投稿
+    # 古いPomoViewを無効化し、新しいPomoViewを再投稿
+    old_pomo_msg = info.get("pomo_msg")
+    if old_pomo_msg:
+        try:
+            await old_pomo_msg.edit(view=None)
+        except Exception:
+            pass
+
+    new_pomo_view = PomoView(timer_author_id)
+    new_pomo_msg = await ctx.send("⏯️ **タイマーコントロール**", view=new_pomo_view)
+    info["pomo_view"] = new_pomo_view
+    info["pomo_msg"] = new_pomo_msg
+
+    # 古い参加パネルを無効化し、最新の位置に再投稿
     old_control_msg = info.get("control_msg")
     if old_control_msg:
         try:
@@ -655,7 +697,7 @@ async def timer_info(ctx):
     target_line = get_target_line(timer_author_id)
     new_join_view = JoinView(timer_author_id)
     new_control_msg = await ctx.send(
-        f"🛑 **<@{host_id}> のタイマー**\n対象: {target_line}\n参加するには下のボタンを押してください。",
+        f"👥 **参加 / 退出パネル**\n対象: {target_line}",
         view=new_join_view
     )
     info["control_msg"] = new_control_msg
