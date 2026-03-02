@@ -271,6 +271,21 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             view=view
         )
 
+        # 古い参加パネルを無効化し、新しいパネルをセットで送信
+        old_join_msg = active_timers[ctx.author.id].get("control_msg")
+        if old_join_msg:
+            try:
+                await old_join_msg.edit(content="⚠️ このパネルは移動しました。最新は下をご確認ください。", view=None)
+            except Exception:
+                pass
+        new_join_view = JoinView(ctx.author.id)
+        control_msg = await ctx.send(
+            f"👥 **参加 / 退出パネル**\n対象: {target_line}",
+            view=new_join_view
+        )
+        active_timers[ctx.author.id]["control_msg"] = control_msg
+        active_timers[ctx.author.id]["join_view"] = new_join_view
+
         remaining_seconds = work_minutes * 60
 
         # 作業タイマーのメインループ
@@ -374,6 +389,21 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
                 f"対象: {target_line}\nリラックスしましょう！",
                 view=break_view
             )
+
+            # 古い参加パネルを無効化し、新しいパネルをセットで送信
+            old_join_msg = active_timers[ctx.author.id].get("control_msg")
+            if old_join_msg:
+                try:
+                    await old_join_msg.edit(content="⚠️ このパネルは移動しました。最新は下をご確認ください。", view=None)
+                except Exception:
+                    pass
+            new_join_view = JoinView(ctx.author.id)
+            control_msg = await ctx.send(
+                f"👥 **参加 / 退出パネル**\n対象: {target_line}",
+                view=new_join_view
+            )
+            active_timers[ctx.author.id]["control_msg"] = control_msg
+            active_timers[ctx.author.id]["join_view"] = new_join_view
 
             remaining_seconds = break_time * 60
 
