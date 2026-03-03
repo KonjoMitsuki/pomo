@@ -180,7 +180,12 @@ def has_active_members(voice_client, author_id):
     """ボットのVCにホストまたは参加者が残っているかチェック"""
     if not voice_client or not voice_client.is_connected():
         return False
-    vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
+    if not voice_client.channel:
+        return False
+    try:
+        vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
+    except Exception:
+        return False
     host_id = active_timers.get(author_id, {}).get("host_id", author_id)
     targets = {host_id} | timer_targets.get(author_id, set())
     return bool(vc_member_ids & targets)
@@ -231,6 +236,12 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
 
     if not voice_client:
         await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
+        return
+
+    # 接続が完全に確立されるまで待つ
+    await asyncio.sleep(1)
+    if not voice_client.is_connected():
+        await ctx.send("⚠️ ボイスチャンネルの接続に失敗しました。もう一度お試しください。")
         return
 
     session_count = 0
