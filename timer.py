@@ -676,7 +676,6 @@ async def timer_info(ctx):
 
     await ctx.send(embed=embed)
 
-<<<<<<< HEAD
     # 古いPomoViewを無効化し、新しいPomoViewを再投稿
     old_pomo_msg = info.get("pomo_msg")
     if old_pomo_msg:
@@ -707,8 +706,6 @@ async def timer_info(ctx):
     info["control_msg"] = new_control_msg
     info["join_view"] = new_join_view
 
-=======
->>>>>>> parent of 733a29a (timerコマンドの最適化)
 @bot.command()
 async def mute(ctx):
     """タイマーの通知音をミュート/ミュート解除します"""
