@@ -244,6 +244,16 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         await ctx.send("⚠️ ボイスチャンネルの接続に失敗しました。もう一度お試しください。")
         return
 
+    # デバッグ: 接続状態確認
+    try:
+        vc_members = voice_client.channel.members
+        print(f"[DEBUG] 接続直後のVC メンバー数: {len(vc_members)}")
+        for m in vc_members:
+            print(f"  - {m.name} (ID: {m.id}, Bot: {m.bot})")
+        print(f"[DEBUG] ctx.author: {ctx.author.name} (ID: {ctx.author.id})")
+    except Exception as e:
+        print(f"[DEBUG] メンバー確認エラー: {e}")
+
     session_count = 0
     join_view = JoinView(ctx.author.id)
     target_line = get_target_line(ctx.author.id)
@@ -266,6 +276,10 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         "control_msg": control_msg,  # 参加パネルのメッセージ参照
         "join_view": join_view,      # JoinViewの参照
     }
+
+    # デバッグ: has_active_members チェック
+    has_members = has_active_members(voice_client, ctx.author.id)
+    print(f"[DEBUG] has_active_members: {has_members}")
 
     # ホストまたは参加者がボイスチャンネルにいる限り繰り返す
     while has_active_members(voice_client, ctx.author.id):
