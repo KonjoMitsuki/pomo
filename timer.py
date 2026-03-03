@@ -288,8 +288,6 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
         "muted": False,
         "host_id": ctx.author.id,  # 現在のホスト
         "join_order": [ctx.author.id],  # 参加順リスト（ホスト移行時に使用）
-        "control_msg": control_msg,  # 参加パネルのメッセージ参照
-        "join_view": join_view,      # JoinViewの参照
     }
 
     # デバッグ: has_active_members チェック
@@ -555,46 +553,20 @@ async def add(ctx, user: discord.Member):
         await ctx.send("⚠️ Botは加算対象に追加できません。")
         return
 
-    # ホスト権限チェック
-    host_timer_author_id = None
-    for author_id, info in active_timers.items():
-        if info.get("host_id") == ctx.author.id:
-            host_timer_author_id = author_id
-            break
-
-    if host_timer_author_id is None:
-        await ctx.send("ℹ️ ホストのみがこのコマンドを実行できます。")
-        return
-
-    targets = timer_targets.setdefault(host_timer_author_id, set())
+    targets = timer_targets.setdefault(ctx.author.id, set())
     targets.add(user.id)
-    await ctx.send(f"✅ タイマー対象に {user.mention} を追加しました。")
+    await ctx.send(f"✅ {ctx.author.mention} のタイマー対象に {user.mention} を追加しました。")
 
 @bot.command(name="list")
 async def list_targets(ctx):
-    """参加しているタイマーのリストを表示します"""
-    # 実行者がホストまたは参加者であるタイマーを探す
-    participating_timers = []
-    for author_id, info in active_timers.items():
-        host_id = info.get("host_id", author_id)
-        targets = timer_targets.get(author_id, set())
-        if ctx.author.id == host_id or ctx.author.id in targets:
-            participating_timers.append((author_id, info, host_id))
-
-    if not participating_timers:
-        await ctx.send("ℹ️ 参加しているタイマーはありません。")
+    """加算対象ユーザーの一覧を表示します（!list）"""
+    targets = timer_targets.get(ctx.author.id, set())
+    if not targets:
+        await ctx.send(f"ℹ️ {ctx.author.mention} の追加対象はありません。")
         return
 
-    # タイマー情報を表示
-    lines = []
-    for author_id, info, host_id in participating_timers:
-        role = "（ホスト）" if ctx.author.id == host_id else "（参加者）"
-        targets = timer_targets.get(author_id, set())
-        all_ids = {host_id} | targets
-        participant_count = len(all_ids)
-        lines.append(f"ホスト: <@{host_id}>{role} - 参加者: {participant_count}人")
-
-    await ctx.send("📌 参加しているタイマー:\n" + "\n".join(lines))
+    mentions = " ".join([f"<@{user_id}>" for user_id in sorted(targets)])
+    await ctx.send(f"📌 {ctx.author.mention} のタイマー対象: {mentions}")
 
 @bot.command()
 async def remove(ctx, user: discord.Member):
@@ -603,24 +575,15 @@ async def remove(ctx, user: discord.Member):
         await ctx.send("⚠️ Botは加算対象に含まれていません。")
         return
 
-    # ホスト権限チェック
-    host_timer_author_id = None
-    for author_id, info in active_timers.items():
-        if info.get("host_id") == ctx.author.id:
-            host_timer_author_id = author_id
-            break
-
-    if host_timer_author_id is None:
-        await ctx.send("ℹ️ ホストのみがこのコマンドを実行できます。")
-        return
-
-    targets = timer_targets.get(host_timer_author_id, set())
+    targets = timer_targets.get(ctx.author.id, set())
     if user.id not in targets:
-        await ctx.send(f"ℹ️ {user.mention} はタイマー対象に登録されていません。")
+        await ctx.send(f"ℹ️ {user.mention} は {ctx.author.mention} の対象に登録されていません。")
         return
 
     targets.remove(user.id)
-    await ctx.send(f"✅ タイマー対象から {user.mention} を削除しました。")
+    await ctx.send(f"✅ {ctx.author.mention} のタイマー対象から {user.mention} を削除しました。")
+    if voice_client and voice_client.is_connected():
+        await voice_client.disconnect()
 
 @bot.command()
 async def stats(ctx):
@@ -713,6 +676,7 @@ async def timer_info(ctx):
 
     await ctx.send(embed=embed)
 
+<<<<<<< HEAD
     # 古いPomoViewを無効化し、新しいPomoViewを再投稿
     old_pomo_msg = info.get("pomo_msg")
     if old_pomo_msg:
@@ -743,6 +707,8 @@ async def timer_info(ctx):
     info["control_msg"] = new_control_msg
     info["join_view"] = new_join_view
 
+=======
+>>>>>>> parent of 733a29a (timerコマンドの最適化)
 @bot.command()
 async def mute(ctx):
     """タイマーの通知音をミュート/ミュート解除します"""
@@ -823,29 +789,26 @@ async def help_command(ctx):
     embed.add_field(
         name="!timer",
         value="現在のタイマー情報を表示します。\n"
-              "タイマー設定、完了セッション数、参加者ごとの作業時間を確認できます。\n"
-              "また、埋もれた参加パネルを最新の位置に再投稿します。",
+              "タイマー設定、完了セッション数、参加者ごとの作業時間を確認できます。",
         inline=False
     )
 
     embed.add_field(
         name="!add @user",
-        value="ホストが指定ユーザーをタイマー対象に追加します。\n"
-              "※ホスト権限が必要です。",
+        value="指定ユーザーをあなたのタイマー対象に追加します。\n"
+              "※参加ボタンからも追加できます。",
         inline=False
     )
 
     embed.add_field(
         name="!remove @user",
-        value="ホストが指定ユーザーをタイマー対象から削除します。\n"
-              "※ホスト権限が必要です。",
+        value="指定ユーザーを加算対象から削除します。",
         inline=False
     )
 
     embed.add_field(
         name="!list",
-        value="自分が参加しているタイマーのリストを表示します。\n"
-              "ホストと参加者の両方がホスト情報や参加者数を確認できます。",
+        value="現在の加算対象ユーザー一覧を表示します。",
         inline=False
     )
 
