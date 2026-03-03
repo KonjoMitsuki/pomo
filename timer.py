@@ -230,18 +230,33 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
     if not voice_client and ctx.author.voice:
         try:
             voice_client = await ctx.author.voice.channel.connect()
+            print(f"[DEBUG] 接続試行: {ctx.author.voice.channel.name}")
         except Exception as e:
+            print(f"[DEBUG] 接続エラー: {e}")
             await ctx.send(f"⚠️ ボイスチャンネルに接続できませんでした: {e}")
             return
+    elif not ctx.author.voice:
+        await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
+        return
 
     if not voice_client:
         await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
         return
 
-    # 接続が完全に確立されるまで待つ
-    await asyncio.sleep(1)
-    if not voice_client.is_connected():
+    # 接続確認（複数の方法でチェック）
+    await asyncio.sleep(2)
+    print(f"[DEBUG] voice_client: {voice_client}")
+    print(f"[DEBUG] voice_client.is_connected(): {voice_client.is_connected()}")
+    print(f"[DEBUG] voice_client.channel: {voice_client.channel}")
+    
+    if not voice_client.channel or not voice_client.is_connected():
+        print(f"[DEBUG] 接続失敗: channel={voice_client.channel}, is_connected={voice_client.is_connected()}")
         await ctx.send("⚠️ ボイスチャンネルの接続に失敗しました。もう一度お試しください。")
+        if voice_client:
+            try:
+                await voice_client.disconnect()
+            except:
+                pass
         return
 
     # デバッグ: 接続状態確認
