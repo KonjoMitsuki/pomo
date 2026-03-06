@@ -191,6 +191,59 @@ def has_active_members(voice_client, author_id):
     return bool(vc_member_ids & targets)
 
 
+def get_active_member_ids(voice_client, author_id):
+    """現在VCにいる、集計対象メンバーID一覧を返す"""
+    if not voice_client or not voice_client.is_connected() or not voice_client.channel:
+        return []
+    try:
+        vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
+    except Exception:
+        return []
+    host_id = active_timers.get(author_id, {}).get("host_id", author_id)
+    targets = {host_id} | timer_targets.get(author_id, set())
+    return list(vc_member_ids & targets)
+
+
+async def add_work_minutes(author_id, voice_client, minutes=1):
+    """作業時間（分）だけ加算。sessionsは増やさない"""
+    if minutes <= 0:
+        return
+
+    member_ids = get_active_member_ids(voice_client, author_id)
+    if not member_ids:
+        return
+
+    timer_info = active_timers.get(author_id)
+    if timer_info:
+        for uid in member_ids:
+            timer_info["session_work"][uid] = timer_info["session_work"].get(uid, 0) + minutes
+
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.executemany("""
+            INSERT INTO stats (user_id, total_minutes, sessions)
+            VALUES (?, ?, 0)
+            ON CONFLICT(user_id) DO UPDATE SET
+            total_minutes = total_minutes + ?
+        """, [(uid, minutes, minutes) for uid in member_ids])
+        await db.commit()
+
+
+async def add_completed_session(author_id, voice_client):
+    """セッション完了時にsessionsのみ加算"""
+    member_ids = get_active_member_ids(voice_client, author_id)
+    if not member_ids:
+        return
+
+    async with aiosqlite.connect(DB_FILE) as db:
+        await db.executemany("""
+            INSERT INTO stats (user_id, total_minutes, sessions)
+            VALUES (?, 0, 1)
+            ON CONFLICT(user_id) DO UPDATE SET
+            sessions = sessions + 1
+        """, [(uid,) for uid in member_ids])
+        await db.commit()
+
+
 @bot.event
 async def on_ready():
     await init_db()
@@ -362,36 +415,20 @@ async def pomo(ctx, work_minutes: int = 25, short_break: int = 5, long_break: in
             await asyncio.sleep(1)
             remaining_seconds -= 1
 
-            if remaining_seconds % 60 == 0 and remaining_seconds != 0:
-                cur_view = active_timers[ctx.author.id]["pomo_view"]
-                cur_msg = active_timers[ctx.author.id]["pomo_msg"]
-                await cur_msg.edit(content=f"🍅 **残り {remaining_seconds // 60} 分** (セッション {session_count})\n集中しましょう！", view=cur_view)
+            if remaining_seconds % 60 == 0:
+                await add_work_minutes(ctx.author.id, voice_client, 1)
+                if remaining_seconds != 0:
+                    cur_view = active_timers[ctx.author.id]["pomo_view"]
+                    cur_msg = active_timers[ctx.author.id]["pomo_msg"]
+                    await cur_msg.edit(content=f"🍅 **残り {remaining_seconds // 60} 分** (セッション {session_count})\n集中しましょう！", view=cur_view)
 
-        # 作業完了 - データベースへ記録（VCにいる かつ タイマーリストに残っている人が対象）
-        member_ids = []
-        if voice_client and voice_client.is_connected():
-            vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
-            current_host = active_timers.get(ctx.author.id, {}).get("host_id", ctx.author.id)
-            targets = set(timer_targets.get(ctx.author.id, set())) | {current_host}
-            member_ids = list(vc_member_ids & targets)
-
-        # アクティブタイマー情報を更新
+        # 作業完了 - セッション数を更新（作業時間は1分ごとに加算済み）
         timer_info = active_timers.get(ctx.author.id)
         if timer_info:
             timer_info["session_count"] = session_count
-            for uid in member_ids:
-                timer_info["session_work"][uid] = timer_info["session_work"].get(uid, 0) + work_minutes
 
-        async with aiosqlite.connect(DB_FILE) as db:
-            if member_ids:
-                await db.executemany("""
-                    INSERT INTO stats (user_id, total_minutes, sessions)
-                    VALUES (?, ?, 1)
-                    ON CONFLICT(user_id) DO UPDATE SET
-                    total_minutes = total_minutes + ?,
-                    sessions = sessions + 1
-                """, [(user_id, work_minutes, work_minutes) for user_id in member_ids])
-            await db.commit()
+        # セッション完了者にsessionsを加算
+        await add_completed_session(ctx.author.id, voice_client)
 
         # 長休憩か小休憩か判定
         is_long_break = (session_count % long_break_interval == 0)
@@ -582,8 +619,6 @@ async def remove(ctx, user: discord.Member):
 
     targets.remove(user.id)
     await ctx.send(f"✅ {ctx.author.mention} のタイマー対象から {user.mention} を削除しました。")
-    if voice_client and voice_client.is_connected():
-        await voice_client.disconnect()
 
 @bot.command()
 async def stats(ctx):
