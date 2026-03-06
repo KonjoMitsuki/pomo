@@ -802,80 +802,56 @@ async def test(ctx):
 async def help_command(ctx):
     """ボットの使い方を表示します"""
     embed = discord.Embed(
-        title="🍅 Pomodoro Bot コマンド一覧",
-        description="ポモドーロタイマーを使って作業時間を管理しましょう！",
+        title="🍅 Discord ポモドーロ Bot",
+        description="作業と休憩を自動で回すVC向けタイマーです。",
         color=discord.Color.red()
     )
 
     embed.add_field(
-        name="!pomo [作業時間] [小休憩] [長休憩] [長休憩頻度]",
-        value="ポモドーロタイマーを開始します。\n"
+        name="開始",
+        value="`!pomo [作業] [小休憩] [長休憩] [長休憩頻度]`\n"
               "デフォルト: `!pomo 25 5 15 4`\n"
-              "例: `!pomo 50 10 20 4` → 50分作業、10分小休憩、20分長休憩、4回ごと\n"
-              "※事前にボイスチャンネルに参加してください。\n"
-              "※他のユーザーは🙋参加 / 👋退出ボタンで参加・退出できます。\n"
-              "※ホストが退出すると次の参加者にホストが移行します。",
+              "例: `!pomo 50 10 20 3`\n"
+              "※VC参加後に実行してください。",
         inline=False
     )
 
     embed.add_field(
-        name="!timer",
-        value="現在のタイマー情報を表示します。\n"
-              "タイマー設定、完了セッション数、参加者ごとの作業時間を確認できます。",
+        name="確認",
+        value="`!timer` 現在の設定・進捗・参加者ごとの作業時間を表示\n"
+              "`!list` 現在の参加対象を表示",
         inline=False
     )
 
     embed.add_field(
-        name="!add @user",
-        value="指定ユーザーをあなたのタイマー対象に追加します。\n"
-              "※参加ボタンからも追加できます。",
+        name="参加者管理",
+        value="`!add @user` 参加対象に追加\n"
+              "`!remove @user` 参加対象から削除\n"
+              "※🙋参加 / 👋退出ボタンでも操作可能",
         inline=False
     )
 
     embed.add_field(
-        name="!remove @user",
-        value="指定ユーザーを加算対象から削除します。",
+        name="統計",
+        value="`!stats` 自分の累計作業時間と完了セッション数\n"
+              "`!reset` 自分の統計をリセット",
         inline=False
     )
 
     embed.add_field(
-        name="!list",
-        value="現在の加算対象ユーザー一覧を表示します。",
+        name="音声",
+        value="`!mute` 通知音のミュート切替\n"
+              "`!test` 通知音の再生テスト",
         inline=False
     )
 
     embed.add_field(
-        name="!stats",
-        value="あなたの累計作業時間と完了セッション数を表示します。",
+        name="その他",
+        value="`!help` このヘルプを表示",
         inline=False
     )
 
-    embed.add_field(
-        name="!reset",
-        value="あなたの累計作業時間をリセットします。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!mute",
-        value="タイマーの通知音をミュート/ミュート解除します。\n"
-              "もう一度実行するとミュート解除されます。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!test",
-        value="ボイスチャンネルで音声再生テストを行います。",
-        inline=False
-    )
-
-    embed.add_field(
-        name="!help",
-        value="このヘルプメッセージを表示します。",
-        inline=False
-    )
-
-    embed.set_footer(text="タイマー中はホスト・参加者が一時停止⏸️・再開▶️・終了⏹️ボタンを使用できます。")
+    embed.set_footer(text="ボタン操作: ⏸️一時停止 / ▶️再開 / ⏹️終了 / 🙋参加 / 👋退出")
 
     await ctx.send(embed=embed)
 
