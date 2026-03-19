@@ -264,12 +264,23 @@ class JoinView(View):
     @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary, emoji="👋")
     async def leave_button(self, interaction: discord.Interaction, button: Button):
         user = interaction.user
+
         if user.id == self.session.host_id:
-            await interaction.response.send_message("⚠️ ホストはこのボタンでは退出できません。VC退出で終了します。", ephemeral=True)
+            new_host = self.session.transfer_host()
+            self.manager.update_index(self.author_id)
+            if new_host:
+                await interaction.response.send_message(
+                    f"👋 {user.mention} が退出しました。ホストが <@{new_host}> に移行しました。"
+                )
+            else:
+                await interaction.response.send_message(
+                    f"👋 {user.mention} が退出しました。タイマーは参加者がいる限り継続します。"
+                )
             return
+
         if self.session.remove_member(user.id):
             self.manager.update_index(self.author_id)
-            await interaction.response.send_message("✅ タイマー対象から退出しました。", ephemeral=True)
+            await interaction.response.send_message(f"👋 {user.mention} が退出しました。", ephemeral=True)
         else:
             await interaction.response.send_message("ℹ️ 参加していません。", ephemeral=True)
 
