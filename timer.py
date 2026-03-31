@@ -47,6 +47,7 @@ class PomoSession:
         return list(active_ids)
 
     def has_active_members(self, voice_client: discord.VoiceClient | None) -> bool:
+        # VCに対象メンバーが残っているか判定する
         return len(self.get_vc_active_ids(voice_client)) > 0
 
     def transfer_host(self) -> int | None:
@@ -100,6 +101,7 @@ class SessionManager:
         return session
 
     def get(self, author_id: int) -> PomoSession | None:
+        # オーナーIDでセッションを取得
         return self._sessions.get(author_id)
 
     def remove(self, author_id: int) -> None:
@@ -185,6 +187,7 @@ class StatsRepository:
             await db.commit()
 
     async def get_stats(self, user_id: int) -> tuple[int, int] | None:
+        # 指定ユーザーの累計分と回数を取得
         async with aiosqlite.connect(self.db_file) as db:
             async with db.execute(
                 "SELECT total_minutes, sessions FROM stats WHERE user_id = ?",
@@ -228,6 +231,7 @@ class AudioPlayer:
             await asyncio.sleep(0.1)
 
     def file_exists(self) -> bool:
+        # 再生対象の音声ファイルが存在するか確認
         return os.path.exists(self.sound_file)
 
 
@@ -240,6 +244,7 @@ class PomoView(View):
         self.stopped = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # 対象メンバーのみがボタンを押せるように制御
         return interaction.user.id in self.session.get_all_member_ids()
 
     @discord.ui.button(label="一時停止", style=discord.ButtonStyle.secondary, emoji="⏸️")
@@ -407,6 +412,7 @@ class PomoRunner:
             await self.vc.disconnect()
 
     async def run_phase(self, duration_min: int, label: str, emoji: str) -> bool:
+        # 単一フェーズ（作業/休憩）をタイマー付きで実行する
         if duration_min <= 0:
             return True
 
@@ -486,6 +492,7 @@ class PomoRunner:
         self.session.join_msg = join_msg
 
     def _phase_start_text(self, duration_min: int, label: str, emoji: str) -> str:
+        # フェーズ開始時のメッセージ本文を組み立て
         if emoji == "🍅":
             return (
                 f"🍅 **<@{self.session.host_id}> の{label} 開始！** ({duration_min}分)\n"
@@ -495,6 +502,7 @@ class PomoRunner:
         return f"{emoji} **<@{self.session.host_id}> の{label}！** ({duration_min}分)\nリラックスしましょう！"
 
     def _phase_tick_text(self, remaining_min: int, label: str, emoji: str) -> str:
+        # 残り時間を案内するメッセージ本文を組み立て
         if emoji == "🍅":
             return f"🍅 **残り {remaining_min} 分** ({label})\n集中しましょう！"
         return f"{emoji} **<@{self.session.host_id}> の残り {remaining_min} 分** ({label})\nリラックスしましょう！"
@@ -531,6 +539,7 @@ class PomoCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Bot起動時にコンソールへログイン情報を表示
         print(f"{self.bot.user} としてログインしました。")
 
     @commands.command()
@@ -846,6 +855,7 @@ class PomoCog(commands.Cog):
 
 
 async def main():
+    # 環境変数のトークンを確認し、Bot・DB・各コンポーネントを初期化して起動する
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print("エラー: DISCORD_BOT_TOKEN 環境変数が設定されていません。")
