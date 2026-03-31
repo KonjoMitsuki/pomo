@@ -9,12 +9,14 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 
+# Discord用ポモドーロタイマー。VC参加者管理・進捗記録・UIボタン処理をまとめる。
 SOUND_FILE = "ding.mp3"
 DB_FILE = "pomo.db"
 
 
 @dataclass
 class PomoSession:
+    # 1つのポモドーロセッションに関する状態を保持する
     host_id: int
     targets: set[int] = field(default_factory=set)
     join_order: list[int] = field(default_factory=list)
@@ -33,9 +35,11 @@ class PomoSession:
     join_msg: "discord.Message | None" = field(default=None, repr=False)
 
     def get_all_member_ids(self) -> set[int]:
+        # ホストと参加対象のIDをまとめたセット
         return {self.host_id} | set(self.targets)
 
     def get_vc_active_ids(self, voice_client: discord.VoiceClient | None) -> list[int]:
+        # VCにいるBot以外のユーザーのうち、対象に含まれるIDだけを抽出
         if not voice_client or not voice_client.channel:
             return []
         vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
@@ -46,6 +50,7 @@ class PomoSession:
         return len(self.get_vc_active_ids(voice_client)) > 0
 
     def transfer_host(self) -> int | None:
+        # 退出時に join_order 順で次のホストへ譲渡
         for user_id in self.join_order:
             if user_id != self.host_id and user_id in self.targets:
                 self.targets.remove(user_id)
@@ -54,6 +59,7 @@ class PomoSession:
         return None
 
     def add_member(self, user_id: int) -> bool:
+        # 新規参加者を追加し、join_order にも記録する
         if user_id == self.host_id or user_id in self.targets:
             return False
         self.targets.add(user_id)
@@ -62,12 +68,14 @@ class PomoSession:
         return True
 
     def remove_member(self, user_id: int) -> bool:
+        # 参加対象から外す（ホストはここでは扱わない）
         if user_id in self.targets:
             self.targets.remove(user_id)
             return True
         return False
 
     def get_target_line(self) -> str:
+        # 表示用にホスト→参加順→その他の順でメンションを並べる
         mentions = [f"<@{self.host_id}>"]
         ordered_targets = [uid for uid in self.join_order if uid in self.targets]
         mentions.extend([f"<@{uid}>" for uid in ordered_targets])
@@ -78,11 +86,13 @@ class PomoSession:
 
 
 class SessionManager:
+    # セッション本体と user_id -> host_id の逆引きを管理
     def __init__(self):
         self._sessions: dict[int, PomoSession] = {}
         self._user_index: dict[int, int] = {}
 
     def create(self, author_id: int, **kwargs) -> PomoSession:
+        # 新規セッションを作成し、作成者を join_order の先頭に入れる
         session = PomoSession(host_id=author_id, **kwargs)
         session.join_order.append(author_id)
         self._sessions[author_id] = session
@@ -93,12 +103,14 @@ class SessionManager:
         return self._sessions.get(author_id)
 
     def remove(self, author_id: int) -> None:
+        # セッション削除時に逆引きインデックスからも掃除
         self._sessions.pop(author_id, None)
         stale_users = [uid for uid, owner in self._user_index.items() if owner == author_id]
         for uid in stale_users:
             self._user_index.pop(uid, None)
 
     def find_by_user(self, user_id: int) -> tuple[int, PomoSession] | None:
+        # 任意ユーザーが属するセッション（オーナーID付き）を探す
         author_id = self._user_index.get(user_id)
         if author_id is None:
             return None
@@ -109,6 +121,7 @@ class SessionManager:
         return author_id, session
 
     def update_index(self, author_id: int) -> None:
+        # user_id -> セッションオーナーID の逆引きを再構築する
         session = self._sessions.get(author_id)
         stale_users = [uid for uid, owner in self._user_index.items() if owner == author_id]
         for uid in stale_users:
@@ -121,10 +134,12 @@ class SessionManager:
 
 
 class StatsRepository:
+    # SQLiteに累計分と完了セッション数を永続化
     def __init__(self, db_file: str = DB_FILE):
         self.db_file = db_file
 
     async def init(self) -> None:
+        # 作業時間とセッション数を持つシンプルなテーブルを用意
         async with aiosqlite.connect(self.db_file) as db:
             await db.execute(
                 """
@@ -138,6 +153,7 @@ class StatsRepository:
             await db.commit()
 
     async def add_work_minutes(self, user_ids: list[int], minutes: int) -> None:
+        # 作業フェーズで毎分インクリメントする
         if not user_ids or minutes <= 0:
             return
         async with aiosqlite.connect(self.db_file) as db:
@@ -153,6 +169,7 @@ class StatsRepository:
             await db.commit()
 
     async def add_completed_session(self, user_ids: list[int]) -> None:
+        # セッション完了時に回数だけ増やす（時間は別途）
         if not user_ids:
             return
         async with aiosqlite.connect(self.db_file) as db:
@@ -179,6 +196,7 @@ class StatsRepository:
         return None
 
     async def reset_stats(self, user_id: int) -> tuple[int, int] | None:
+        # リセット前の値を返しつつ削除
         before = await self.get_stats(user_id)
         if before is None:
             return None
@@ -189,10 +207,12 @@ class StatsRepository:
 
 
 class AudioPlayer:
+    # 音声ファイル存在チェック＋一度だけ再生
     def __init__(self, sound_file: str = SOUND_FILE):
         self.sound_file = sound_file
 
     async def play(self, voice_client: discord.VoiceClient, volume: float = 1.0) -> None:
+        # FFmpeg経由で音声を一回再生する
         if not self.file_exists():
             return
         if voice_client.is_playing():
@@ -212,6 +232,7 @@ class AudioPlayer:
 
 
 class PomoView(View):
+    # 一時停止・再開・終了ボタンを持つタイマー制御View
     def __init__(self, session: PomoSession):
         super().__init__(timeout=None)
         self.session = session
@@ -223,6 +244,7 @@ class PomoView(View):
 
     @discord.ui.button(label="一時停止", style=discord.ButtonStyle.secondary, emoji="⏸️")
     async def pause_button(self, interaction: discord.Interaction, button: Button):
+        # 停止し、再開ボタンを有効化
         self.paused = True
         button.disabled = True
         self.children[1].disabled = False
@@ -230,6 +252,7 @@ class PomoView(View):
 
     @discord.ui.button(label="再開", style=discord.ButtonStyle.success, emoji="▶️", disabled=True)
     async def resume_button(self, interaction: discord.Interaction, button: Button):
+        # 再開し、一時停止ボタンを再び有効化
         self.paused = False
         button.disabled = True
         self.children[0].disabled = False
@@ -237,12 +260,14 @@ class PomoView(View):
 
     @discord.ui.button(label="終了", style=discord.ButtonStyle.danger, emoji="⏹️")
     async def stop_button(self, interaction: discord.Interaction, button: Button):
+        # 即座に停止してViewを閉じる
         self.stopped = True
         await interaction.response.edit_message(content="⏹️ タイマーを終了しました。", view=None)
         self.stop()
 
 
 class JoinView(View):
+    # 参加/退出ボタンを提供するパネル
     def __init__(self, session: PomoSession, manager: SessionManager, author_id: int):
         super().__init__(timeout=None)
         self.session = session
@@ -251,6 +276,7 @@ class JoinView(View):
 
     @discord.ui.button(label="参加", style=discord.ButtonStyle.success, emoji="🙋")
     async def join_button(self, interaction: discord.Interaction, button: Button):
+        # ユーザーを対象に追加し、逆引きを更新
         user = interaction.user
         if user.bot:
             await interaction.response.send_message("⚠️ Botは参加できません。", ephemeral=True)
@@ -263,6 +289,7 @@ class JoinView(View):
 
     @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary, emoji="👋")
     async def leave_button(self, interaction: discord.Interaction, button: Button):
+        # ホスト退出なら譲渡、それ以外は対象から外す
         user = interaction.user
 
         if user.id == self.session.host_id:
@@ -305,6 +332,7 @@ class PomoRunner:
         self.author_id = author_id
 
     async def run(self) -> None:
+        # 作業フェーズと休憩フェーズを交互に回し、参加者がいなくなれば終了
         self.session.active = True
         self.manager.update_index(self.author_id)
         self.session.control_msg = await self.ctx.send(
@@ -317,11 +345,13 @@ class PomoRunner:
             self.session.session_count += 1
             label = f"セッション {self.session.session_count}"
 
+            # 作業フェーズ
             ok = await self.run_phase(self.session.work_min, label, "🍅")
             if not ok:
                 return
 
             active_ids = self.session.get_vc_active_ids(self.vc)
+            # セッション完了を記録し、休憩案内を送る
             await self.stats.add_completed_session(active_ids)
             if self.session.pomo_msg:
                 is_long_break = (self.session.session_count % self.session.interval == 0)
@@ -337,6 +367,7 @@ class PomoRunner:
                 )
 
             if not self.session.muted and self.vc.is_connected():
+                # 作業終了の通知音
                 if self.audio.file_exists():
                     await self.audio.play(self.vc, volume=1.0)
                 else:
@@ -348,6 +379,7 @@ class PomoRunner:
             break_emoji = "☕" if is_long_break else "💤"
 
             if break_time > 0:
+                # 休憩フェーズ
                 ok = await self.run_phase(break_time, break_type, break_emoji)
                 if not ok:
                     return
@@ -358,6 +390,7 @@ class PomoRunner:
                     )
 
                 if not self.session.muted and self.vc.is_connected() and self.audio.file_exists():
+                    # 休憩終了の通知音（少し大きめ）
                     await self.audio.play(self.vc, volume=1.5)
 
             await asyncio.sleep(2)
@@ -387,6 +420,7 @@ class PomoRunner:
 
         remaining_seconds = duration_min * 60
         while remaining_seconds > 0:
+            # 停止/一時停止/退出を確認しつつ1秒ずつ進める
             state = await self._wait_tick(view)
             if state == "paused":
                 continue
@@ -405,12 +439,14 @@ class PomoRunner:
 
             remaining_seconds -= 1
             if emoji == "🍅" and remaining_seconds % 60 == 0:
+                # 作業フェーズのみ1分ごとに記録を蓄積
                 active_ids = self.session.get_vc_active_ids(self.vc)
                 await self.stats.add_work_minutes(active_ids, 1)
                 for uid in active_ids:
                     self.session.session_work[uid] = self.session.session_work.get(uid, 0) + 1
 
             if remaining_seconds % 60 == 0 and remaining_seconds != 0:
+                # 残り時間を分単位で表示更新
                 await self.session.pomo_msg.edit(
                     content=self._phase_tick_text(remaining_seconds // 60, label, emoji),
                     view=view,
@@ -419,6 +455,7 @@ class PomoRunner:
         return True
 
     async def _wait_tick(self, view: PomoView) -> str:
+        # 1秒待ちつつ停止/一時停止/退出を検知する
         if not self.session.has_active_members(self.vc):
             return "no_members"
         if view.stopped:
@@ -430,6 +467,7 @@ class PomoRunner:
         return "tick"
 
     async def _refresh_panels(self, label: str) -> None:
+        # 参加ボタン付きメッセージを最新位置で再生成する
         if self.session.join_view and self.session.join_msg:
             for child in self.session.join_view.children:
                 if isinstance(child, Button):
@@ -463,6 +501,7 @@ class PomoRunner:
 
 
 class PomoCog(commands.Cog):
+    # Botコマンドのエントリーポイント。セッション管理と統計操作をまとめる。
     def __init__(
         self,
         bot: commands.Bot,
@@ -476,6 +515,7 @@ class PomoCog(commands.Cog):
         self.audio = audio
 
     async def _resolve_owned_session(self, user_id: int) -> tuple[int, PomoSession] | None:
+        # コマンド実行者がホストのセッションだけを安全に取得する
         session = self.manager.get(user_id)
         if session is None:
             result = self.manager.find_by_user(user_id)
@@ -502,6 +542,7 @@ class PomoCog(commands.Cog):
         long_break: int = 15,
         long_break_interval: int = 4,
     ):
+        # VCに接続し、パラメータ付きでポモドーロを開始
         voice_client = ctx.voice_client
         if not voice_client and ctx.author.voice:
             try:
@@ -552,6 +593,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def timer(self, ctx):
+        # 稼働中セッションの現状をEmbedで提示し、参加パネルを最新化
         result = self.manager.find_by_user(ctx.author.id)
         if result is None:
             await ctx.send("ℹ️ 稼働中のタイマーはありません。")
@@ -609,6 +651,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def add(self, ctx, user: discord.Member):
+        # 対象ユーザーを自分のセッションに追加（なければ新規作成）
         if user.bot:
             await ctx.send("⚠️ Botは加算対象に追加できません。")
             return
@@ -632,6 +675,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="list")
     async def list_targets(self, ctx):
+        # 自分の対象ユーザー一覧をメンション列で表示
         resolved = await self._resolve_owned_session(ctx.author.id)
         if resolved is None:
             session = self.manager.get(ctx.author.id)
@@ -652,6 +696,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def remove(self, ctx, user: discord.Member):
+        # 対象からユーザーを外す（ホスト保護付き）
         if user.bot:
             await ctx.send("⚠️ Botは加算対象に含まれていません。")
             return
@@ -672,6 +717,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="stats")
     async def stats_cmd(self, ctx):
+        # 累計作業時間と完了セッション数を表示
         row = await self.stats.get_stats(ctx.author.id)
         if row:
             minutes, sessions = row
@@ -685,6 +731,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def reset(self, ctx):
+        # 自分の統計を削除し、削除前の値を通知
         before = await self.stats.reset_stats(ctx.author.id)
         if before is None:
             await ctx.send("ℹ️ リセットする記録がありません。")
@@ -697,6 +744,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def mute(self, ctx):
+        # 稼働中セッションの通知音をトグル
         resolved = await self._resolve_owned_session(ctx.author.id)
         if resolved is None:
             await ctx.send("ℹ️ 稼働中のタイマーはありません。")
@@ -711,6 +759,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def test(self, ctx):
+        # VCでding.mp3を流すテスト（接続確認用）
         if not ctx.author.voice:
             await ctx.send("ボイスチャンネルに入ってからコマンドを打ってください。")
             return
@@ -732,6 +781,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="help")
     async def help_command(self, ctx):
+        # コマンド一覧Embed
         embed = discord.Embed(
             title="🍅 Pomodoro Bot コマンド一覧",
             description="ポモドーロタイマーを使って作業時間を管理しましょう！",
@@ -769,6 +819,7 @@ class PomoCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        # ホスト退出時の譲渡と対象ユーザーの退出処理を行う
         if before.channel == after.channel:
             return
         if before.channel is None:
@@ -802,6 +853,7 @@ async def main():
         print("  export DISCORD_BOT_TOKEN='your_token_here'")
         raise SystemExit(1)
 
+    # 各コンポーネントを初期化してBotを起動
     stats = StatsRepository(DB_FILE)
     await stats.init()
 
