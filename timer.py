@@ -77,13 +77,16 @@ class PomoSession:
         # VCに対象メンバーが残っているか判定する
         return len(self.get_vc_active_ids(voice_client)) > 0
 
-    def transfer_host(self) -> int | None:
+    def transfer_host(self, active_ids: set[int] | None = None) -> int | None:
         # 退出時に join_order 順で次のホストへ譲渡
         for user_id in self.join_order:
-            if user_id != self.host_id and user_id in self.targets:
-                self.targets.remove(user_id)
-                self.host_id = user_id
-                return user_id
+            if user_id == self.host_id or user_id not in self.targets:
+                continue
+            if active_ids is not None and user_id not in active_ids:
+                continue
+            self.targets.remove(user_id)
+            self.host_id = user_id
+            return user_id
         return None
 
     def add_member(self, user_id: int) -> bool:
@@ -325,7 +328,9 @@ class JoinView(View):
         user = interaction.user
 
         if user.id == self.session.host_id:
-            new_host = self.session.transfer_host()
+            guild_vc = interaction.guild.voice_client if interaction.guild else None
+            active_ids = set(self.session.get_vc_active_ids(guild_vc))
+            new_host = self.session.transfer_host(active_ids=active_ids)
             self.manager.update_index(self.author_id)
             if new_host:
                 await interaction.response.send_message(
@@ -347,6 +352,7 @@ class JoinView(View):
 
 
 class PomoRunner:
+    NO_MEMBER_GRACE_SECONDS = 12
     VC_DOWN_GRACE_SECONDS = 12
 
     def __init__(
@@ -366,6 +372,7 @@ class PomoRunner:
         self.audio = audio
         self.manager = manager
         self.author_id = author_id
+        self._no_member_since: float | None = None
         self._vc_down_since: float | None = None
 
     async def run(self) -> None:
@@ -380,6 +387,13 @@ class PomoRunner:
         await self._refresh_panels("開始")
 
         while not self.session.stop_requested:
+            # 在席0人が継続した場合はセッションを終了する（瞬断は猶予）
+            if not self._has_members_with_grace():
+                self.session.stop_requested = True
+                break
+            if not self.session.has_active_members(self.vc):
+                await asyncio.sleep(1)
+                continue
 
             self.session.session_count += 1
             label = f"セッション {self.session.session_count}"
@@ -464,6 +478,8 @@ class PomoRunner:
             state = await self._wait_tick(view)
             if state == "paused":
                 continue
+            if state == "wait_members":
+                continue
             if state == "wait_vc":
                 continue
             if state == "stopped":
@@ -522,12 +538,33 @@ class PomoRunner:
 
         if view.stopped:
             return "stopped"
+
+        if not self._has_members_with_grace():
+            print("[DEBUG] 在席メンバー0人状態が継続したためタイマーを終了します。")
+            return "no_members"
+        if not self.session.has_active_members(self.vc):
+            await asyncio.sleep(1)
+            return "wait_members"
+
         if view.paused:
             await asyncio.sleep(1)
             return "paused"
 
         await asyncio.sleep(1)
         return "tick"
+
+    def _has_members_with_grace(self) -> bool:
+        # 在席0人が継続して一定時間を超えたら終了判定にする
+        if self.session.has_active_members(self.vc):
+            self._no_member_since = None
+            return True
+
+        now = time.monotonic()
+        if self._no_member_since is None:
+            self._no_member_since = now
+            return True
+
+        return (now - self._no_member_since) < self.NO_MEMBER_GRACE_SECONDS
 
     async def _refresh_panels(self, label: str) -> None:
         # 参加ボタン付きメッセージを最新位置で再生成する
@@ -917,7 +954,9 @@ class PomoCog(commands.Cog):
             return
 
         if member.id == session.host_id:
-            new_host = session.transfer_host()
+            guild_vc = member.guild.voice_client if member.guild else None
+            active_ids = set(session.get_vc_active_ids(guild_vc))
+            new_host = session.transfer_host(active_ids=active_ids)
             self.manager.update_index(author_id)
             if session.control_msg:
                 if new_host is None:
@@ -931,7 +970,7 @@ class PomoCog(commands.Cog):
                 self.manager.update_index(author_id)
 
 
-def has_voice_runtime_dependencies() -> bool:
+def has_voice_runtime_dependencies(strict: bool = True) -> bool:
     # Voice 接続に必要な依存が揃っているかを事前に確認する
     missing = []
     if importlib.util.find_spec("nacl") is None:
@@ -942,11 +981,12 @@ def has_voice_runtime_dependencies() -> bool:
     if not missing:
         return True
 
-    print("エラー: Voice機能の依存パッケージが不足しています。")
+    level = "エラー" if strict else "警告"
+    print(f"{level}: Voice機能の依存パッケージが不足しています。")
     print(f"不足: {', '.join(missing)}")
-    print("以下を実行してから再起動してください:")
+    print("不足依存をインストールしてください:")
     print("  pip install PyNaCl davey")
-    return False
+    return not strict
 
 
 async def main():
@@ -958,7 +998,8 @@ async def main():
         print("  export DISCORD_BOT_TOKEN='your_token_here'")
         raise SystemExit(1)
 
-    if not has_voice_runtime_dependencies():
+    strict_voice_deps = os.getenv("POMO_STRICT_VOICE_DEPS", "1").strip().lower() not in {"0", "false", "off", "no"}
+    if not has_voice_runtime_dependencies(strict=strict_voice_deps):
         raise SystemExit(1)
 
     # 各コンポーネントを初期化してBotを起動
