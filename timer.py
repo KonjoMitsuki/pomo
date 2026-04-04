@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
+import time
 from dataclasses import dataclass, field
 
 import aiosqlite
@@ -28,6 +30,7 @@ class PomoSession:
     session_work: dict[int, int] = field(default_factory=dict)
     muted: bool = False
     active: bool = False
+    stop_requested: bool = False
     pomo_view: "PomoView | None" = field(default=None, repr=False)
     pomo_msg: "discord.Message | None" = field(default=None, repr=False)
     control_msg: "discord.Message | None" = field(default=None, repr=False)
@@ -42,7 +45,31 @@ class PomoSession:
         # VCにいるBot以外のユーザーのうち、対象に含まれるIDだけを抽出
         if not voice_client or not voice_client.channel:
             return []
-        vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
+
+        # VoiceChannel.voice_states はメンバーキャッシュ不足の影響を受けにくい
+        # ため、在席判定はまずこちらを使う。
+        voice_states = getattr(voice_client.channel, "voice_states", None)
+        if isinstance(voice_states, dict):
+            vc_member_ids = set(voice_states.keys())
+        else:
+            vc_member_ids = set()
+
+        # フォールバックとして従来の members も参照する。
+        if not vc_member_ids:
+            vc_member_ids = {m.id for m in voice_client.channel.members if not m.bot}
+
+        # キャッシュが薄い環境向けに、ホストだけはMember.voiceからも補完する。
+        if not vc_member_ids:
+            guild = getattr(voice_client, "guild", None)
+            host_member = guild.get_member(self.host_id) if guild else None
+            if (
+                host_member
+                and host_member.voice
+                and host_member.voice.channel
+                and host_member.voice.channel == voice_client.channel
+            ):
+                vc_member_ids.add(self.host_id)
+
         active_ids = vc_member_ids & self.get_all_member_ids()
         return list(active_ids)
 
@@ -305,8 +332,10 @@ class JoinView(View):
                     f"👋 {user.mention} が退出しました。ホストが <@{new_host}> に移行しました。"
                 )
             else:
+                self.session.stop_requested = True
+                print(f"[DEBUG] stop_requested=True (leave_button) host={user.id}")
                 await interaction.response.send_message(
-                    f"👋 {user.mention} が退出しました。タイマーは参加者がいる限り継続します。"
+                    f"👋 {user.mention} が退出しました。タイマーを終了します。"
                 )
             return
 
@@ -318,6 +347,8 @@ class JoinView(View):
 
 
 class PomoRunner:
+    VC_DOWN_GRACE_SECONDS = 12
+
     def __init__(
         self,
         session: PomoSession,
@@ -335,10 +366,12 @@ class PomoRunner:
         self.audio = audio
         self.manager = manager
         self.author_id = author_id
+        self._vc_down_since: float | None = None
 
     async def run(self) -> None:
         # 作業フェーズと休憩フェーズを交互に回し、参加者がいなくなれば終了
         self.session.active = True
+        self.session.stop_requested = False
         self.manager.update_index(self.author_id)
         self.session.control_msg = await self.ctx.send(
             f"🛑 **<@{self.session.host_id}> のタイマー**\n"
@@ -346,7 +379,8 @@ class PomoRunner:
         )
         await self._refresh_panels("開始")
 
-        while self.session.has_active_members(self.vc):
+        while not self.session.stop_requested:
+
             self.session.session_count += 1
             label = f"セッション {self.session.session_count}"
 
@@ -430,6 +464,8 @@ class PomoRunner:
             state = await self._wait_tick(view)
             if state == "paused":
                 continue
+            if state == "wait_vc":
+                continue
             if state == "stopped":
                 if self.session.control_msg:
                     await self.session.control_msg.edit(content="⏹️ ポモドーロを終了しました。お疲れ様でした！")
@@ -462,13 +498,34 @@ class PomoRunner:
 
     async def _wait_tick(self, view: PomoView) -> str:
         # 1秒待ちつつ停止/一時停止/退出を検知する
-        if not self.session.has_active_members(self.vc):
+        if self.session.stop_requested:
             return "no_members"
+
+        # 一時的な接続状態の揺れに備えて、guild側の参照を取り直して判定する。
+        if (not self.vc) or (not self.vc.is_connected()):
+            guild = self.ctx.guild
+            guild_vc = guild.voice_client if guild else None
+            if guild_vc and guild_vc.is_connected():
+                self.vc = guild_vc
+                self._vc_down_since = None
+            else:
+                now = time.monotonic()
+                if self._vc_down_since is None:
+                    self._vc_down_since = now
+                if now - self._vc_down_since >= self.VC_DOWN_GRACE_SECONDS:
+                    print("[DEBUG] VC切断を検知したためタイマーを終了します。")
+                    return "no_members"
+                await asyncio.sleep(1)
+                return "wait_vc"
+        else:
+            self._vc_down_since = None
+
         if view.stopped:
             return "stopped"
         if view.paused:
             await asyncio.sleep(1)
             return "paused"
+
         await asyncio.sleep(1)
         return "tick"
 
@@ -552,17 +609,31 @@ class PomoCog(commands.Cog):
         long_break_interval: int = 4,
     ):
         # VCに接続し、パラメータ付きでポモドーロを開始
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
+            return
+
+        target_channel = ctx.author.voice.channel
         voice_client = ctx.voice_client
-        if not voice_client and ctx.author.voice:
+        if voice_client is None:
             try:
-                voice_client = await ctx.author.voice.channel.connect()
+                voice_client = await target_channel.connect(reconnect=True)
             except Exception as e:
                 await ctx.send(f"⚠️ ボイスチャンネルに接続できませんでした: {e}")
                 return
-
-        if not voice_client:
-            await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
-            return
+        else:
+            try:
+                if not voice_client.is_connected():
+                    try:
+                        await voice_client.disconnect(force=True)
+                    except Exception:
+                        pass
+                    voice_client = await target_channel.connect(reconnect=True)
+                elif voice_client.channel != target_channel:
+                    await voice_client.move_to(target_channel)
+            except Exception as e:
+                await ctx.send(f"⚠️ ボイスチャンネル接続の更新に失敗しました: {e}")
+                return
 
         existing = self.manager.get(ctx.author.id)
         if existing is not None and existing.active:
@@ -586,6 +657,7 @@ class PomoCog(commands.Cog):
             session.interval = long_break_interval
             session.session_count = 0
             session.active = False
+            session.stop_requested = False
             self.manager.update_index(ctx.author.id)
 
         runner = PomoRunner(session, voice_client, ctx, self.stats, self.audio, self.manager, ctx.author.id)
@@ -593,6 +665,7 @@ class PomoCog(commands.Cog):
             await runner.run()
         finally:
             session.active = False
+            session.stop_requested = False
             session.pomo_view = None
             session.pomo_msg = None
             session.control_msg = None
@@ -833,6 +906,8 @@ class PomoCog(commands.Cog):
             return
         if before.channel is None:
             return
+        if member.bot:
+            return
 
         result = self.manager.find_by_user(member.id)
         if result is None:
@@ -846,12 +921,32 @@ class PomoCog(commands.Cog):
             self.manager.update_index(author_id)
             if session.control_msg:
                 if new_host is None:
+                    session.stop_requested = True
+                    print(f"[DEBUG] stop_requested=True (voice_state_update) host={member.id}")
                     await session.control_msg.channel.send("ℹ️ ホストが退出しました。残りメンバーがいないためセッションは自動終了します。")
                 else:
                     await session.control_msg.channel.send(f"👑 ホストが <@{new_host}> に移行しました。")
         else:
             if session.remove_member(member.id):
                 self.manager.update_index(author_id)
+
+
+def has_voice_runtime_dependencies() -> bool:
+    # Voice 接続に必要な依存が揃っているかを事前に確認する
+    missing = []
+    if importlib.util.find_spec("nacl") is None:
+        missing.append("PyNaCl")
+    if importlib.util.find_spec("davey") is None:
+        missing.append("davey")
+
+    if not missing:
+        return True
+
+    print("エラー: Voice機能の依存パッケージが不足しています。")
+    print(f"不足: {', '.join(missing)}")
+    print("以下を実行してから再起動してください:")
+    print("  pip install PyNaCl davey")
+    return False
 
 
 async def main():
@@ -863,6 +958,9 @@ async def main():
         print("  export DISCORD_BOT_TOKEN='your_token_here'")
         raise SystemExit(1)
 
+    if not has_voice_runtime_dependencies():
+        raise SystemExit(1)
+
     # 各コンポーネントを初期化してBotを起動
     stats = StatsRepository(DB_FILE)
     await stats.init()
@@ -872,6 +970,7 @@ async def main():
 
     intents = discord.Intents.default()
     intents.message_content = True
+    intents.voice_states = True
     bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
     await bot.add_cog(PomoCog(bot, manager, stats, audio))
