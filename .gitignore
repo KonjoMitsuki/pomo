@@ -1,6 +1,9 @@
 venv/
 .github/agents/
 assets/pomo.db
-src/__pycache__
 .venv/
 .env
+pomo.db
+src/__pycache__/
+__pycache__/
+*.pyc
