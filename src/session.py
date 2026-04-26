@@ -7,18 +7,22 @@ import discord
 
 @dataclass
 class PomoSession:
+    # ユーザー情報
     host_id: int
     targets: set[int] = field(default_factory=set)
     join_order: list[int] = field(default_factory=list)
+    # セッション設定
     work_min: int = 25
     short_brk: int = 5
     long_brk: int = 15
     interval: int = 4
+    # セッション状態
     session_count: int = 0
     session_work: dict[int, int] = field(default_factory=dict)
     muted: bool = False
     active: bool = False
     stop_requested: bool = False
+    # UI関連
     pomo_view: "PomoView | None" = field(default=None, repr=False)
     pomo_msg: "discord.Message | None" = field(default=None, repr=False)
     control_msg: "discord.Message | None" = field(default=None, repr=False)
