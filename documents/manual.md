@@ -101,4 +101,6 @@ python src/timer.py
 - ボイスに接続できない場合は、権限とサーバー設定を確認してください。
 - 音が鳴らない場合は、`ffmpeg` の導入と `assets/ding.mp3` の配置を確認してください。
 - データベース `assets/pomo.db` は自動生成されます。
+- 内部では `users` / `timers` / `sessions` / `session_members` の4テーブルで記録を管理します。
+- `!stats` と `!reset` は、個別のセッション記録を集計した結果を表示します。
 - 実装は `src/`、音声とDBは `assets/`、説明書類は `documents/` に分けています。

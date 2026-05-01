@@ -131,21 +131,52 @@
 
 ## 6. 永続化スキーマ
 
-SQLiteテーブル `stats`。
+SQLiteテーブルは以下の4つ。
 
 ```sql
-CREATE TABLE IF NOT EXISTS stats (
-    user_id INTEGER PRIMARY KEY,
-    total_minutes INTEGER DEFAULT 0,
-    sessions INTEGER DEFAULT 0
-)
+CREATE TABLE IF NOT EXISTS users (
+  user_id      INTEGER PRIMARY KEY,
+  display_name TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS timers (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id    INTEGER NOT NULL REFERENCES users(user_id),
+  guild_id    INTEGER,
+  name        TEXT    NOT NULL,
+  work_min    INTEGER NOT NULL DEFAULT 25,
+  short_brk   INTEGER NOT NULL DEFAULT 5,
+  long_brk    INTEGER NOT NULL DEFAULT 15,
+  interval    INTEGER NOT NULL DEFAULT 4,
+  is_shared   INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  timer_id        INTEGER NOT NULL REFERENCES timers(id),
+  guild_id        INTEGER,
+  started_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  ended_at        TEXT,
+  completed_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS session_members (
+  session_id          INTEGER NOT NULL REFERENCES sessions(id),
+  user_id             INTEGER NOT NULL REFERENCES users(user_id),
+  work_minutes        INTEGER NOT NULL DEFAULT 0,
+  completed_sessions  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (session_id, user_id)
+);
 ```
 
 意味:
 
-- `user_id`: DiscordユーザーID
-- `total_minutes`: 累計作業分数
-- `sessions`: 完了セッション数
+- `users`: DiscordユーザーIDと表示名
+- `timers`: タイマー設定のひな形
+- `sessions`: 実際に開始・終了したポモドーロの記録
+- `session_members`: セッションごとの参加者別集計
 
 ## 7. 実行フロー
 
@@ -273,7 +304,7 @@ VC断/在席0に対しては、即終了せず猶予を置く。
 
 ### 9.6 `!stats`
 
-- 自分の `total_minutes` と `sessions` を表示
+- 自分の累計作業時間と完了セッション数を表示
 
 ### 9.7 `!reset`
 

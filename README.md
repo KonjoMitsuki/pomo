@@ -126,15 +126,16 @@ VC で通知音再生テストを行います。
 
 ## データベース
 
-`assets/pomo.db` に以下を保存します。
+`assets/pomo.db` では、記録を4つのテーブルに分けて保存します。
 
-```sql
-CREATE TABLE stats (
-    user_id INTEGER PRIMARY KEY,
-    total_minutes INTEGER DEFAULT 0,
-    sessions INTEGER DEFAULT 0
-)
-```
+| テーブル名        | 役割                                             |
+| :---------------- | :----------------------------------------------- |
+| `users`           | Discordユーザーの基本情報を保存                  |
+| `timers`          | タイマー設定を保存                               |
+| `sessions`        | ポモドーロ1回ごとの開始・終了記録を保存          |
+| `session_members` | セッションごとの参加者別の作業時間と完了数を保存 |
+
+この構成により、単なる合計値だけでなく「いつ」「どのタイマーで」「誰がどれだけ作業したか」を追跡できるようになりました。
 
 ## トラブルシューティング
 
