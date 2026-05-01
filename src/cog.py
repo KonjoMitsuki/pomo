@@ -372,8 +372,8 @@ class PomoCog(commands.Cog):
         embed.add_field(name="!help", value="このヘルプメッセージを表示します。", inline=False)
         embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️・参加🙋・退出👋ボタンが使用できます。")
 
-        # チャンネル内に既に投稿されている同タイトルのヘルプを検索し、
-        # 既存があればそれを編集、複数あれば古いものを削除して単一表示にする。
+        # チャンネル内に既に投稿されている同タイトルのヘルプを検索する。
+        # 実行ごとに再投稿するため、既存helpは先に削除して整理する。
         help_title = embed.title
         help_messages: list[discord.Message] = []
         async for m in ctx.channel.history(limit=100):
@@ -385,23 +385,15 @@ class PomoCog(commands.Cog):
                 except Exception:
                     continue
 
+        # 既存のhelpは整理し、実行ごとに新しいhelpを再投稿する。
         if help_messages:
-            # 最も新しいメッセージを残して、他は削除
-            help_messages.sort(key=lambda m: m.created_at)
-            newest = help_messages[-1]
-            # 編集で内容を最新化
-            try:
-                await newest.edit(embed=embed)
-            except Exception:
-                pass
-            # 古いメッセージを削除
-            for old in help_messages[:-1]:
+            for old in help_messages:
                 try:
                     await old.delete()
                 except Exception:
                     pass
-        else:
-            await ctx.send(embed=embed)
+
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
