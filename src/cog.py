@@ -104,6 +104,7 @@ class PomoCog(commands.Cog):
             session.stop_requested = False
             self.manager.update_index(ctx.author.id)
 
+        await self.stats.upsert_user(ctx.author.id, ctx.author.display_name)
         runner = PomoRunner(session, voice_client, ctx, self.stats, self.audio, self.manager, ctx.author.id)
         try:
             await runner.run()
@@ -240,7 +241,8 @@ class PomoCog(commands.Cog):
     async def stats_cmd(self, ctx):
         row = await self.stats.get_stats(ctx.author.id)
         if row:
-            minutes, sessions = row
+            minutes = row["total_minutes"]
+            sessions = row["total_sessions"]
             await ctx.send(
                 f"📊 **{ctx.author.display_name} さんの記録**\n"
                 f"累計作業時間: {minutes}分\n"
@@ -255,7 +257,8 @@ class PomoCog(commands.Cog):
         if before is None:
             await ctx.send("ℹ️ リセットする記録がありません。")
             return
-        minutes, sessions = before
+        minutes = before["total_minutes"]
+        sessions = before["total_sessions"]
         await ctx.send(
             f"🧹 記録をリセットしました。\n"
             f"削除前: {minutes}分 / {sessions}セッション"

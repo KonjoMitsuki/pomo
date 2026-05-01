@@ -41,6 +41,25 @@ class PomoRunner:
         self.session.active = True
         self.session.stop_requested = False
         self.manager.update_index(self.author_id)
+        
+        # Get or create default timer and start session
+        guild_id = self.ctx.guild.id if self.ctx.guild else None
+        timer = await self.stats.get_timer_by_name(self.author_id, "default")
+        if not timer:
+            timer_id = await self.stats.create_timer(
+                self.author_id,
+                "default",
+                guild_id,
+                self.session.work_min,
+                self.session.short_brk,
+                self.session.long_brk,
+                self.session.interval
+            )
+        else:
+            timer_id = timer["id"]
+            
+        self.session_id = await self.stats.start_session(timer_id, guild_id)
+        
         self.session.control_msg = await self.ctx.send(
             f"🛑 **<@{self.session.host_id}> のタイマー**\n"
             "ポモドーロを終了する場合は、ボイスチャンネルから退出してください。"
@@ -60,10 +79,11 @@ class PomoRunner:
 
             ok = await self.run_phase(self.session.work_min, label, "🍅")
             if not ok:
+                await self.stats.end_session(self.session_id, self.session.session_count)
                 return
 
             active_ids = self.session.get_vc_active_ids(self.vc)
-            await self.stats.add_completed_session(active_ids)
+            await self.stats.add_completed_session(self.session_id, active_ids)
             if self.session.pomo_msg:
                 is_long_break = (self.session.session_count % self.session.interval == 0)
                 break_time = self.session.long_brk if is_long_break else self.session.short_brk
@@ -91,6 +111,7 @@ class PomoRunner:
             if break_time > 0:
                 ok = await self.run_phase(break_time, break_type, break_emoji)
                 if not ok:
+                    await self.stats.end_session(self.session_id, self.session.session_count)
                     return
                 if self.session.pomo_msg:
                     await self.session.pomo_msg.edit(
@@ -113,6 +134,8 @@ class PomoRunner:
 
         if self.vc and self.vc.is_connected():
             await self.vc.disconnect()
+
+        await self.stats.end_session(self.session_id, self.session.session_count)
 
     async def run_phase(self, duration_min: int, label: str, emoji: str) -> bool:
         if duration_min <= 0:
@@ -151,7 +174,7 @@ class PomoRunner:
             remaining_seconds -= 1
             if emoji == "🍅" and remaining_seconds % 60 == 0:
                 active_ids = self.session.get_vc_active_ids(self.vc)
-                await self.stats.add_work_minutes(active_ids, 1)
+                await self.stats.add_work_minutes(self.session_id, active_ids, 1)
                 for uid in active_ids:
                     self.session.session_work[uid] = self.session.session_work.get(uid, 0) + 1
 
