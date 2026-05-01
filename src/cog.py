@@ -334,7 +334,37 @@ class PomoCog(commands.Cog):
         embed.add_field(name="!test", value="ボイスチャンネルで音声再生テストを行います。", inline=False)
         embed.add_field(name="!help", value="このヘルプメッセージを表示します。", inline=False)
         embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️・参加🙋・退出👋ボタンが使用できます。")
-        await ctx.send(embed=embed)
+
+        # チャンネル内に既に投稿されている同タイトルのヘルプを検索し、
+        # 既存があればそれを編集、複数あれば古いものを削除して単一表示にする。
+        help_title = embed.title
+        help_messages: list[discord.Message] = []
+        async for m in ctx.channel.history(limit=100):
+            if m.author == self.bot.user and m.embeds:
+                try:
+                    e = m.embeds[0]
+                    if getattr(e, "title", None) == help_title:
+                        help_messages.append(m)
+                except Exception:
+                    continue
+
+        if help_messages:
+            # 最も新しいメッセージを残して、他は削除
+            help_messages.sort(key=lambda m: m.created_at)
+            newest = help_messages[-1]
+            # 編集で内容を最新化
+            try:
+                await newest.edit(embed=embed)
+            except Exception:
+                pass
+            # 古いメッセージを削除
+            for old in help_messages[:-1]:
+                try:
+                    await old.delete()
+                except Exception:
+                    pass
+        else:
+            await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
