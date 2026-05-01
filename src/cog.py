@@ -57,7 +57,7 @@ class PomoCog(commands.Cog):
             action=f"サーバー参加: {guild.id}",
         )
 
-    @commands.command()
+    @commands.command(aliases=["p"])
     async def pomo(
         self,
         ctx,
@@ -141,7 +141,7 @@ class PomoCog(commands.Cog):
             session.join_msg = None
             self.manager.update_index(ctx.author.id)
 
-    @commands.command()
+    @commands.command(aliases=["t"])
     async def timer(self, ctx):
         log_from_context(ctx, "!timer")
         result = self.manager.find_by_user(ctx.author.id)
@@ -222,7 +222,7 @@ class PomoCog(commands.Cog):
         self.manager.update_index(author_id)
         await ctx.send(f"✅ {ctx.author.mention} のタイマー対象に {user.mention} を追加しました。")
 
-    @commands.command(name="list")
+    @commands.command(name="list", aliases=["ls"])
     async def list_targets(self, ctx):
         log_from_context(ctx, "!list")
         resolved = await self._resolve_owned_session(ctx.author.id)
@@ -243,7 +243,7 @@ class PomoCog(commands.Cog):
         mentions = " ".join([f"<@{user_id}>" for user_id in sorted(session.targets)])
         await ctx.send(f"📌 <@{session.host_id}> のタイマー対象: {mentions}")
 
-    @commands.command()
+    @commands.command(aliases=["rm"])
     async def remove(self, ctx, user: discord.Member):
         log_from_context(ctx, f"!remove {user.display_name}")
         if user.bot:
@@ -264,7 +264,7 @@ class PomoCog(commands.Cog):
         self.manager.update_index(author_id)
         await ctx.send(f"✅ {ctx.author.mention} のタイマー対象から {user.mention} を削除しました。")
 
-    @commands.command(name="stats")
+    @commands.command(name="stats", aliases=["st"])
     async def stats_cmd(self, ctx):
         log_from_context(ctx, "!stats")
         row = await self.stats.get_stats(ctx.author.id)
@@ -335,7 +335,7 @@ class PomoCog(commands.Cog):
             await ctx.send("❌ assets/ding.mp3 が見つかりません！")
             await vc.disconnect()
 
-    @commands.command(name="help")
+    @commands.command(name="help", aliases=["h"])
     async def help_command(self, ctx):
         log_from_context(ctx, "!help")
         embed = discord.Embed(
@@ -347,6 +347,7 @@ class PomoCog(commands.Cog):
         embed.add_field(
             name="!pomo [作業時間] [小休憩] [長休憩] [長休憩頻度]",
             value="ポモドーロタイマーを開始します。\n"
+            "短縮形: `!p`\n"
             "デフォルト: `!pomo 25 5 15 4`\n"
             "例: `!pomo 50 10 20 4` → 50分作業、10分小休憩、20分長休憩、4回ごと\n"
             "※事前にボイスチャンネルに参加してください。",
@@ -354,7 +355,7 @@ class PomoCog(commands.Cog):
         )
         embed.add_field(
             name="!timer",
-            value="現在の参加パネルを最新位置に再投稿します。",
+            value="現在の参加パネルを最新位置に再投稿します。\n短縮形: `!t`",
             inline=False,
         )
         embed.add_field(
@@ -363,13 +364,13 @@ class PomoCog(commands.Cog):
             "作業中、同じVCにいる対象ユーザーの記録が加算されます。",
             inline=False,
         )
-        embed.add_field(name="!list", value="現在の加算対象ユーザー一覧を表示します。", inline=False)
-        embed.add_field(name="!remove @user", value="指定ユーザーを加算対象から削除します。", inline=False)
-        embed.add_field(name="!stats", value="あなたの累計作業時間と完了セッション数を表示します。", inline=False)
+        embed.add_field(name="!list", value="現在の加算対象ユーザー一覧を表示します。\n短縮形: `!ls`", inline=False)
+        embed.add_field(name="!remove @user", value="指定ユーザーを加算対象から削除します。\n短縮形: `!rm`", inline=False)
+        embed.add_field(name="!stats", value="あなたの累計作業時間と完了セッション数を表示します。\n短縮形: `!st`", inline=False)
         embed.add_field(name="!reset", value="あなたの統計をリセットします。", inline=False)
         embed.add_field(name="!mute", value="タイマー通知音のミュート切替を行います。", inline=False)
         embed.add_field(name="!test", value="ボイスチャンネルで音声再生テストを行います。", inline=False)
-        embed.add_field(name="!help", value="このヘルプメッセージを表示します。", inline=False)
+        embed.add_field(name="!help", value="このヘルプメッセージを表示します。\n短縮形: `!h`", inline=False)
         embed.set_footer(text="タイマー中は一時停止⏸️・再開▶️・終了⏹️・参加🙋・退出👋ボタンが使用できます。")
 
         # チャンネル内に既に投稿されている同タイトルのヘルプを検索する。
