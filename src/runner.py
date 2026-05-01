@@ -8,6 +8,7 @@ from discord.ext import commands
 from discord.ui import Button
 
 from audio import AudioPlayer
+from logging_utils import log_action
 from session import PomoSession, SessionManager
 from storage import StatsRepository
 from views import JoinView, PomoView
@@ -41,6 +42,7 @@ class PomoRunner:
         self.session.active = True
         self.session.stop_requested = False
         self.manager.update_index(self.author_id)
+        ended_normally = True
         
         # Get or create default timer and start session
         guild_id = self.ctx.guild.id if self.ctx.guild else None
@@ -69,6 +71,7 @@ class PomoRunner:
         while not self.session.stop_requested:
             if not self._has_members_with_grace():
                 self.session.stop_requested = True
+                ended_normally = False
                 break
             if not self.session.has_active_members(self.vc):
                 await asyncio.sleep(1)
@@ -123,6 +126,13 @@ class PomoRunner:
                     await self.audio.play(self.vc, volume=1.5)
 
             await asyncio.sleep(2)
+
+        if ended_normally:
+            log_action(
+                guild_name=getattr(self.ctx.guild, "name", None),
+                user_name=self.ctx.author.display_name,
+                action=f"セッション正常終了: {self.session.session_count}回完了",
+            )
 
         if self.session.control_msg:
             await self.session.control_msg.edit(

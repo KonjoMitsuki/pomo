@@ -3,6 +3,7 @@ from __future__ import annotations
 import discord
 from discord.ui import Button, View
 
+from logging_utils import log_from_interaction
 from session import PomoSession, SessionManager
 
 
@@ -18,6 +19,7 @@ class PomoView(View):
 
     @discord.ui.button(label="一時停止", style=discord.ButtonStyle.secondary, emoji="⏸️")
     async def pause_button(self, interaction: discord.Interaction, button: Button):
+        log_from_interaction(interaction, "ボタン: 一時停止")
         self.paused = True
         button.disabled = True
         self.children[1].disabled = False
@@ -25,6 +27,7 @@ class PomoView(View):
 
     @discord.ui.button(label="再開", style=discord.ButtonStyle.success, emoji="▶️", disabled=True)
     async def resume_button(self, interaction: discord.Interaction, button: Button):
+        log_from_interaction(interaction, "ボタン: 再開")
         self.paused = False
         button.disabled = True
         self.children[0].disabled = False
@@ -32,6 +35,7 @@ class PomoView(View):
 
     @discord.ui.button(label="終了", style=discord.ButtonStyle.danger, emoji="⏹️")
     async def stop_button(self, interaction: discord.Interaction, button: Button):
+        log_from_interaction(interaction, "ボタン: 終了")
         self.stopped = True
         await interaction.response.edit_message(content="⏹️ タイマーを終了しました。", view=None)
         self.stop()
@@ -46,6 +50,7 @@ class JoinView(View):
 
     @discord.ui.button(label="参加", style=discord.ButtonStyle.success, emoji="🙋")
     async def join_button(self, interaction: discord.Interaction, button: Button):
+        log_from_interaction(interaction, "ボタン: 参加")
         user = interaction.user
         if user.bot:
             await interaction.response.send_message("⚠️ Botは参加できません。", ephemeral=True)
@@ -58,6 +63,7 @@ class JoinView(View):
 
     @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary, emoji="👋")
     async def leave_button(self, interaction: discord.Interaction, button: Button):
+        log_from_interaction(interaction, "ボタン: 退出")
         user = interaction.user
 
         if user.id == self.session.host_id:

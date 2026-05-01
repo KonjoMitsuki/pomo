@@ -7,6 +7,7 @@ from discord.ext import commands
 from discord.ui import Button
 
 from audio import AudioPlayer
+from logging_utils import log_action, log_from_context
 from runner import PomoRunner
 from session import PomoSession, SessionManager
 from storage import StatsRepository
@@ -42,7 +43,19 @@ class PomoCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print(f"{self.bot.user} としてログインしました。")
+        log_action(
+            guild_name="-",
+            user_name=getattr(self.bot.user, "display_name", None) or getattr(self.bot.user, "name", None),
+            action=f"{self.bot.user} としてログインしました。" if self.bot.user else "Bot としてログインしました。",
+        )
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        log_action(
+            guild_name=guild.name,
+            user_name=getattr(self.bot.user, "display_name", None) or getattr(self.bot.user, "name", None),
+            action=f"サーバー参加: {guild.id}",
+        )
 
     @commands.command()
     async def pomo(
@@ -53,6 +66,10 @@ class PomoCog(commands.Cog):
         long_break: int = 15,
         long_break_interval: int = 4,
     ):
+        log_from_context(
+            ctx,
+            f"!pomo {work_minutes} {short_break} {long_break} {long_break_interval}",
+        )
         if not ctx.author.voice or not ctx.author.voice.channel:
             await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
             return
@@ -78,6 +95,12 @@ class PomoCog(commands.Cog):
             except Exception as e:
                 await ctx.send(f"⚠️ ボイスチャンネル接続の更新に失敗しました: {e}")
                 return
+
+        log_action(
+            guild_name=getattr(ctx.guild, "name", None),
+            user_name=ctx.author.display_name,
+            action=f"VC接続成功: {target_channel.name}",
+        )
 
         existing = self.manager.get(ctx.author.id)
         if existing is not None and existing.active:
@@ -120,6 +143,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def timer(self, ctx):
+        log_from_context(ctx, "!timer")
         result = self.manager.find_by_user(ctx.author.id)
         if result is None:
             await ctx.send("ℹ️ 稼働中のタイマーはありません。")
@@ -176,6 +200,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def add(self, ctx, user: discord.Member):
+        log_from_context(ctx, f"!add {user.display_name}")
         if user.bot:
             await ctx.send("⚠️ Botは加算対象に追加できません。")
             return
@@ -199,6 +224,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="list")
     async def list_targets(self, ctx):
+        log_from_context(ctx, "!list")
         resolved = await self._resolve_owned_session(ctx.author.id)
         if resolved is None:
             session = self.manager.get(ctx.author.id)
@@ -219,6 +245,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def remove(self, ctx, user: discord.Member):
+        log_from_context(ctx, f"!remove {user.display_name}")
         if user.bot:
             await ctx.send("⚠️ Botは加算対象に含まれていません。")
             return
@@ -239,6 +266,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="stats")
     async def stats_cmd(self, ctx):
+        log_from_context(ctx, "!stats")
         row = await self.stats.get_stats(ctx.author.id)
         if row:
             minutes = row["total_minutes"]
@@ -253,6 +281,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def reset(self, ctx):
+        log_from_context(ctx, "!reset")
         before = await self.stats.reset_stats(ctx.author.id)
         if before is None:
             await ctx.send("ℹ️ リセットする記録がありません。")
@@ -266,6 +295,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def mute(self, ctx):
+        log_from_context(ctx, "!mute")
         resolved = await self._resolve_owned_session(ctx.author.id)
         if resolved is None:
             await ctx.send("ℹ️ 稼働中のタイマーはありません。")
@@ -280,11 +310,17 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def test(self, ctx):
+        log_from_context(ctx, "!test")
         if not ctx.author.voice:
             await ctx.send("ボイスチャンネルに入ってからコマンドを打ってください。")
             return
 
         vc = await ctx.author.voice.channel.connect()
+        log_action(
+            guild_name=getattr(ctx.guild, "name", None),
+            user_name=ctx.author.display_name,
+            action=f"VC接続成功: {ctx.author.voice.channel.name}",
+        )
         await asyncio.sleep(1.5)
 
         if self.audio.file_exists():
@@ -301,6 +337,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="help")
     async def help_command(self, ctx):
+        log_from_context(ctx, "!help")
         embed = discord.Embed(
             title="🍅 Pomodoro Bot コマンド一覧",
             description="ポモドーロタイマーを使って作業時間を管理しましょう！",
