@@ -38,6 +38,37 @@ class PomoRunner:
         self._no_member_since: float | None = None
         self._vc_down_since: float | None = None
 
+    async def _send_result(self) -> None:
+        """セッション終了時にリザルトをEmbedで送信する。"""
+
+        embed = discord.Embed(
+            title="🍅 ポモドーロ終了 — リザルト",
+            color=discord.Color.red(),
+        )
+
+        embed.add_field(
+            name="完了セッション数",
+            value=f"{self.session.session_count} セッション",
+            inline=False,
+        )
+
+        if self.session.session_work:
+            lines: list[str] = []
+            for uid in self.session.join_order:
+                minutes = self.session.session_work.get(uid, 0)
+                crown = "👑 " if uid == self.session.host_id else ""
+                lines.append(f"{crown}<@{uid}>: {minutes}分")
+
+            embed.add_field(
+                name="参加者の作業時間",
+                value="\n".join(lines),
+                inline=False,
+            )
+        else:
+            embed.add_field(name="参加者の作業時間", value="記録なし", inline=False)
+
+        await self.ctx.send(embed=embed)
+
     async def run(self) -> None:
         self.session.active = True
         self.session.stop_requested = False
@@ -83,6 +114,7 @@ class PomoRunner:
             ok = await self.run_phase(self.session.work_min, label, "🍅")
             if not ok:
                 await self.stats.end_session(self.session_id, self.session.session_count)
+                await self._send_result()
                 return
 
             active_ids = self.session.get_vc_active_ids(self.vc)
@@ -115,6 +147,7 @@ class PomoRunner:
                 ok = await self.run_phase(break_time, break_type, break_emoji)
                 if not ok:
                     await self.stats.end_session(self.session_id, self.session.session_count)
+                    await self._send_result()
                     return
                 if self.session.pomo_msg:
                     await self.session.pomo_msg.edit(
@@ -142,10 +175,11 @@ class PomoRunner:
                 )
             )
 
+        await self.stats.end_session(self.session_id, self.session.session_count)
+        await self._send_result()
+
         if self.vc and self.vc.is_connected():
             await self.vc.disconnect()
-
-        await self.stats.end_session(self.session_id, self.session.session_count)
 
     async def run_phase(self, duration_min: int, label: str, emoji: str) -> bool:
         if duration_min <= 0:
