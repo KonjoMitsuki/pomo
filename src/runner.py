@@ -73,6 +73,9 @@ class PomoRunner:
         self.session.active = True
         self.session.stop_requested = False
         self.manager.update_index(self.author_id)
+        # セッション再利用時の残存データをクリア
+        self.session.session_count = 0
+        self.session.session_work = {}
         ended_normally = True
         
         # Get or create default timer and start session
