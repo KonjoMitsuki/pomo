@@ -277,7 +277,7 @@ class PomoCog(commands.Cog):
         self.manager.update_index(author_id)
         await ctx.send(f"✅ {ctx.author.mention} のタイマー対象に {user.mention} を追加しました。")
 
-    @commands.command(name="tlist", aliases="tls")
+    @commands.command(name="tlist", aliases=["tls", "tl"])
     async def tlist(self, ctx):
         log_from_context(ctx, "!tlist")
         timers = await self.stats.list_timers(ctx.author.id, ctx.guild.id if ctx.guild else None)
@@ -299,7 +299,7 @@ class PomoCog(commands.Cog):
             )
         await ctx.send(embed=embed)
 
-    @commands.command(name="tconfig", aliases="tc")
+    @commands.command(name="tconfig", aliases=["tc"])
     async def tconfig(self, ctx, name: str, work_min: int = 25, short_brk: int = 5, long_brk: int = 15, interval: int = 4):
         log_from_context(ctx, f"!tconfig {name} {work_min} {short_brk} {long_brk} {interval}")
         await self.stats.upsert_user(ctx.author.id, ctx.author.display_name)
