@@ -160,7 +160,7 @@ class PomoCog(commands.Cog):
 
         timer = await self.stats.get_timer_by_name(ctx.author.id, timer_name, guild_id)
         if not timer:
-            await self.stats.create_timer(
+            await self.stats.upsert_timer(
                 ctx.author.id,
                 timer_name,
                 guild_id,
@@ -170,6 +170,14 @@ class PomoCog(commands.Cog):
                 4,
             )
             timer = await self.stats.get_timer_by_name(ctx.author.id, timer_name, guild_id)
+
+        if not timer:
+            await ctx.send(f"⚠️ タイマー `{timer_name}` の作成に失敗しました。")
+            try:
+                await voice_client.disconnect()
+            except Exception:
+                pass
+            return
 
         timer_id = timer["id"]
         session.work_min = timer["work_min"]
