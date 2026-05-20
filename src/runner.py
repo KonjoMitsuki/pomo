@@ -27,6 +27,7 @@ class PomoRunner:
         audio: AudioPlayer,
         manager: SessionManager,
         author_id: int,
+        timer_id: int,
     ):
         self.session = session
         self.vc = voice_client
@@ -35,6 +36,7 @@ class PomoRunner:
         self.audio = audio
         self.manager = manager
         self.author_id = author_id
+        self.timer_id = timer_id
         self._no_member_since: float | None = None
         self._vc_down_since: float | None = None
 
@@ -44,23 +46,8 @@ class PomoRunner:
         self.manager.update_index(self.author_id)
         ended_normally = True
         
-        # Get or create default timer and start session
         guild_id = self.ctx.guild.id if self.ctx.guild else None
-        timer = await self.stats.get_timer_by_name(self.author_id, "default")
-        if not timer:
-            timer_id = await self.stats.create_timer(
-                self.author_id,
-                "default",
-                guild_id,
-                self.session.work_min,
-                self.session.short_brk,
-                self.session.long_brk,
-                self.session.interval
-            )
-        else:
-            timer_id = timer["id"]
-            
-        self.session_id = await self.stats.start_session(timer_id, guild_id)
+        self.session_id = await self.stats.start_session(self.timer_id, guild_id)
         
         self.session.control_msg = await self.ctx.send(
             f"🛑 **<@{self.session.host_id}> のタイマー**\n"

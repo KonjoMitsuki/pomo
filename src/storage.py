@@ -35,7 +35,8 @@ class StatsRepository:
                     long_brk    INTEGER NOT NULL DEFAULT 15,
                     interval    INTEGER NOT NULL DEFAULT 4,
                     is_shared   INTEGER NOT NULL DEFAULT 0,
-                    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+                    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(owner_id, guild_id, name)
                 )
             """)
             
@@ -80,33 +81,120 @@ class StatsRepository:
             await db.execute("PRAGMA foreign_keys = ON")
             async with db.execute(
                 """
-                INSERT INTO timers (owner_id, guild_id, name, work_min, short_brk, long_brk, interval)
+                INSERT INTO timers (owner_id, name, guild_id, work_min, short_brk, long_brk, interval)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (owner_id, guild_id, name, work_min, short_brk, long_brk, interval),
+                (owner_id, name, guild_id, work_min, short_brk, long_brk, interval),
             ) as cursor:
                 timer_id = cursor.lastrowid
             await db.commit()
             return timer_id
 
-    async def get_timer_by_name(self, owner_id: int, name: str) -> dict | None:
+    async def get_timer_by_name(self, owner_id: int, name: str, guild_id: int | None) -> dict | None:
         async with aiosqlite.connect(self.db_file) as db:
             await db.execute("PRAGMA foreign_keys = ON")
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT * FROM timers WHERE owner_id = ? AND name = ?",
-                (owner_id, name),
+                """
+                SELECT * FROM timers
+                WHERE owner_id = ?
+                  AND (guild_id = ? OR (guild_id IS NULL AND ? IS NULL))
+                  AND name = ?
+                """,
+                (owner_id, guild_id, guild_id, name),
             ) as cursor:
                 row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def list_timers(self, owner_id: int) -> list[dict]:
+    async def list_timers(self, owner_id: int, guild_id: int | None = None) -> list[dict]:
+        async with aiosqlite.connect(self.db_file) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            db.row_factory = aiosqlite.Row
+            if guild_id is None:
+                async with db.execute(
+                    "SELECT * FROM timers WHERE owner_id = ?",
+                    (owner_id,),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+            else:
+                async with db.execute(
+                    "SELECT * FROM timers WHERE owner_id = ? AND (guild_id = ? OR (guild_id IS NULL AND ? IS NULL))",
+                    (owner_id, guild_id, guild_id),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def upsert_timer(
+        self,
+        owner_id: int,
+        name: str,
+        guild_id: int | None,
+        work_min: int,
+        short_brk: int,
+        long_brk: int,
+        interval: int,
+    ) -> int:
+        async with aiosqlite.connect(self.db_file) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            await db.execute(
+                """
+                INSERT INTO timers (owner_id, name, guild_id, work_min, short_brk, long_brk, interval)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(owner_id, guild_id, name) DO UPDATE SET
+                    work_min = excluded.work_min,
+                    short_brk = excluded.short_brk,
+                    long_brk = excluded.long_brk,
+                    interval = excluded.interval
+                """,
+                (owner_id, name, guild_id, work_min, short_brk, long_brk, interval),
+            )
+            await db.commit()
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT id FROM timers WHERE owner_id = ? AND name = ? AND (guild_id = ? OR (guild_id IS NULL AND ? IS NULL))",
+                (owner_id, name, guild_id, guild_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def delete_timer(self, owner_id: int, name: str, guild_id: int | None) -> bool:
         async with aiosqlite.connect(self.db_file) as db:
             await db.execute("PRAGMA foreign_keys = ON")
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT * FROM timers WHERE owner_id = ?",
-                (owner_id,),
+                "SELECT * FROM timers WHERE owner_id = ? AND name = ? AND (guild_id = ? OR (guild_id IS NULL AND ? IS NULL))",
+                (owner_id, name, guild_id, guild_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if not row:
+                return False
+            timer_id = row["id"]
+            async with db.execute(
+                "SELECT COUNT(*) FROM sessions WHERE timer_id = ?",
+                (timer_id,),
+            ) as cursor:
+                c = await cursor.fetchone()
+            if c and c[0] and c[0] > 0:
+                return False
+            await db.execute("DELETE FROM timers WHERE id = ?", (timer_id,))
+            await db.commit()
+            return True
+
+    async def get_stats_per_timer(self, user_id: int) -> list[dict]:
+        async with aiosqlite.connect(self.db_file) as db:
+            await db.execute("PRAGMA foreign_keys = ON")
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT t.name AS timer_name, SUM(sm.work_minutes) AS total_minutes
+                FROM session_members sm
+                JOIN sessions s ON sm.session_id = s.id
+                JOIN timers t ON s.timer_id = t.id
+                WHERE sm.user_id = ?
+                GROUP BY t.id, t.name
+                ORDER BY total_minutes DESC
+                """,
+                (user_id,),
             ) as cursor:
                 rows = await cursor.fetchall()
         return [dict(row) for row in rows]

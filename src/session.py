@@ -16,6 +16,7 @@ class PomoSession:
     short_brk: int = 5
     long_brk: int = 15
     interval: int = 4
+    timer_name: str = "original"
     # セッション状態
     session_count: int = 0
     session_work: dict[int, int] = field(default_factory=dict)
