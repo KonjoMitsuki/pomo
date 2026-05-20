@@ -98,20 +98,10 @@ class PomoCog(commands.Cog):
             return
 
         if existing is None:
-            session = self.manager.create(
-                ctx.author.id,
-                work_min=work_minutes,
-                short_brk=short_break,
-                long_brk=long_break,
-                interval=long_break_interval,
-            )
+            session = self.manager.create(ctx.author.id)
         else:
             session = existing
             session.host_id = ctx.author.id
-            session.work_min = work_minutes
-            session.short_brk = short_break
-            session.long_brk = long_break
-            session.interval = long_break_interval
             session.session_count = 0
             session.active = False
             session.stop_requested = False
