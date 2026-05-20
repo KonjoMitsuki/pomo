@@ -58,8 +58,44 @@ class PomoCog(commands.Cog):
         )
 
     @commands.command(aliases=["p"])
-    async def pomo(self, ctx, timer_name: str = "original"):
-        log_from_context(ctx, f"!pomo {timer_name}")
+    async def pomo(
+        self,
+        ctx,
+        timer_name: str = "original",
+        work_min: int | None = None,
+        short_brk: int | None = None,
+        long_brk: int | None = None,
+        interval: int | None = None,
+    ):
+        log_from_context(
+            ctx,
+            f"!pomo {timer_name}"
+            + (
+                ""
+                if all(v is None for v in (work_min, short_brk, long_brk, interval))
+                else f" {work_min} {short_brk} {long_brk} {interval}"
+            ),
+        )
+
+        provided = [work_min, short_brk, long_brk, interval]
+        provided_count = sum(v is not None for v in provided)
+        if provided_count not in (0, 4):
+            await ctx.send(
+                "⚠️ 時間指定は4つすべて入力してください。\n"
+                "使い方: `!p <timer_name> <作業分> <小休憩分> <長休憩分> <長休憩頻度>`"
+            )
+            return
+
+        if provided_count == 4:
+            if (work_min or 0) <= 0:
+                await ctx.send("⚠️ 作業時間は1以上で指定してください。")
+                return
+            if (short_brk or 0) < 0 or (long_brk or 0) < 0:
+                await ctx.send("⚠️ 休憩時間は0以上で指定してください。")
+                return
+            if (interval or 0) <= 0:
+                await ctx.send("⚠️ 長休憩頻度は1以上で指定してください。")
+                return
         if not ctx.author.voice or not ctx.author.voice.channel:
             await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
             return
@@ -111,6 +147,17 @@ class PomoCog(commands.Cog):
 
         # タイマー設定を取得または作成する（サーバー単位）
         guild_id = ctx.guild.id if ctx.guild else None
+        if provided_count == 4:
+            await self.stats.upsert_timer(
+                ctx.author.id,
+                timer_name,
+                guild_id,
+                int(work_min),
+                int(short_brk),
+                int(long_brk),
+                int(interval),
+            )
+
         timer = await self.stats.get_timer_by_name(ctx.author.id, timer_name, guild_id)
         if not timer:
             await self.stats.create_timer(
@@ -230,9 +277,9 @@ class PomoCog(commands.Cog):
         self.manager.update_index(author_id)
         await ctx.send(f"✅ {ctx.author.mention} のタイマー対象に {user.mention} を追加しました。")
 
-    @commands.command(name="plist", aliases=["pl"])
-    async def plist(self, ctx):
-        log_from_context(ctx, "!plist")
+    @commands.command(name="tlist", aliases="tls")
+    async def tlist(self, ctx):
+        log_from_context(ctx, "!tlist")
         timers = await self.stats.list_timers(ctx.author.id, ctx.guild.id if ctx.guild else None)
         if not timers:
             await ctx.send("ℹ️ タイマーがまだありません。`!pomo` を実行すると `original` タイマーが自動作成されます。")
@@ -252,9 +299,9 @@ class PomoCog(commands.Cog):
             )
         await ctx.send(embed=embed)
 
-    @commands.command()
-    async def pconfig(self, ctx, name: str, work_min: int = 25, short_brk: int = 5, long_brk: int = 15, interval: int = 4):
-        log_from_context(ctx, f"!pconfig {name} {work_min} {short_brk} {long_brk} {interval}")
+    @commands.command(name="tconfig", aliases="tc")
+    async def tconfig(self, ctx, name: str, work_min: int = 25, short_brk: int = 5, long_brk: int = 15, interval: int = 4):
+        log_from_context(ctx, f"!tconfig {name} {work_min} {short_brk} {long_brk} {interval}")
         await self.stats.upsert_user(ctx.author.id, ctx.author.display_name)
         await self.stats.upsert_timer(
             ctx.author.id,
@@ -265,9 +312,23 @@ class PomoCog(commands.Cog):
             long_brk,
             interval,
         )
+        updated_running_session = False
+        resolved = await self._resolve_owned_session(ctx.author.id)
+        if resolved is not None:
+            author_id, session = resolved
+            if session.active and session.timer_name == name:
+                session.work_min = work_min
+                session.short_brk = short_brk
+                session.long_brk = long_brk
+                session.interval = interval
+                self.manager.update_index(author_id)
+                updated_running_session = True
+
+        suffix = "\n現在稼働中の同名タイマーにも反映しました。" if updated_running_session else ""
         await ctx.send(
             f"✅ タイマー `{name}` を設定しました。\n"
             f"作業: {work_min}分 / 小休憩: {short_brk}分 / 長休憩: {long_brk}分 / 長休憩頻度: {interval}回ごと"
+            f"{suffix}"
         )
 
     @commands.command()
@@ -411,22 +472,23 @@ class PomoCog(commands.Cog):
                 "短縮形: `!p`\n"
                 "タイマー名を省略すると `original` を使用します。\n"
                 "例: `!p work` → `work` タイマーで起動\n"
+                "例: `!p work 50 10 20 4` → `work` を設定更新してそのまま起動\n"
                 "※事前にボイスチャンネルに参加してください。"
             ),
             inline=False,
         )
         embed.add_field(
-            name="!pconfig <name> [作業] [小休憩] [長休憩] [頻度]",
+            name="!tconfig <name> [作業] [小休憩] [長休憩] [頻度]",
             value=(
                 "名前付きタイマーの設定を作成・上書きします。\n"
                 "デフォルト値: `25 5 15 4`\n"
-                "例: `!pconfig work 50 10 20 4`"
+                "例: `!tconfig work 50 10 20 4`"
             ),
             inline=False,
         )
         embed.add_field(
-            name="!plist",
-            value="あなたのタイマー設定一覧を表示します。\n短縮形: `!pl`",
+            name="!tlist",
+            value="あなたのタイマー設定一覧を表示します。\n短縮形: `!tl`",
             inline=False,
         )
         embed.add_field(
