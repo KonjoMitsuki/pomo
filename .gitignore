@@ -5,5 +5,4 @@ assets/pomo.db
 .env
 pomo.db
 src/__pycache__/
-__pycache__/
 *.pyc
