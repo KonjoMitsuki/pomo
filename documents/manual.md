@@ -41,11 +41,12 @@ python src/timer.py
 ### ポモドーロ開始
 
 ```text
-!pomo [work_minutes] [short_break] [long_break] [long_break_interval]
+!pomo [timer_name]
 ```
 
-- デフォルト: `!pomo 25 5 15 4`
-- 例: `!pomo 50 10 20 4`
+- タイマー名を指定して開始します。省略時は `original` を使用します。
+- 既存のタイマーがない場合は `original` が自動作成されます。
+- タイマーの設定を明示的に指定したい場合は `!pconfig` で作成してください。
 
 注意:
 
@@ -67,10 +68,10 @@ python src/timer.py
 ### 対象一覧
 
 ```text
-!list
+!plist
 ```
 
-現在の対象ユーザー一覧を表示します。
+あなたのタイマー設定一覧（サーバー単位）を表示します。短縮 `!pl` でも可。既存の `!list` は置き換わりました。
 
 ### 対象から削除
 
@@ -84,9 +85,11 @@ python src/timer.py
 
 ```text
 !stats
+!stats <timer_name>
 ```
 
-累計作業時間と完了セッション数を表示します。
+- `!stats`（引数なし）: 全タイマーの累計作業時間一覧を表示します。
+- `!stats <timer_name>`: 指定タイマーの累計作業時間と完了セッション数を表示します。
 
 ### 音声テスト
 

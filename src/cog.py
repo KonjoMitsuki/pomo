@@ -416,11 +416,32 @@ class PomoCog(commands.Cog):
 
         embed.add_field(
             name="!pomo [timer_name]",
-            value="ポモドーロタイマーを開始します。\n"
-            "短縮形: `!p`\n"
-            "タイマー名を省略すると `original` を使用します。\n"
-            "例: `!p work` → `work` タイマーで起動\n"
-            "※事前にボイスチャンネルに参加してください。",
+            value=(
+                "ポモドーロタイマーを開始します。\n"
+                "短縮形: `!p`\n"
+                "タイマー名を省略すると `original` を使用します。\n"
+                "例: `!p work` → `work` タイマーで起動\n"
+                "※事前にボイスチャンネルに参加してください。"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="!pconfig <name> [作業] [小休憩] [長休憩] [頻度]",
+            value=(
+                "名前付きタイマーの設定を作成・上書きします。\n"
+                "デフォルト値: `25 5 15 4`\n"
+                "例: `!pconfig work 50 10 20 4`"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="!plist",
+            value="あなたのタイマー設定一覧を表示します。\n短縮形: `!pl`",
+            inline=False,
+        )
+        embed.add_field(
+            name="!pdel <name>",
+            value="指定タイマーを削除します。記録が残っているタイマーは削除できません。",
             inline=False,
         )
         embed.add_field(
@@ -430,30 +451,25 @@ class PomoCog(commands.Cog):
         )
         embed.add_field(
             name="!add @user",
-            value="指定ユーザーをあなたのタイマー対象に追加します。\n"
-            "作業中、同じVCにいる対象ユーザーの記録が加算されます。",
+            value=(
+                "指定ユーザーをあなたのタイマー対象に追加します。\n"
+                "作業中、同じVCにいる対象ユーザーの記録が加算されます。"
+            ),
             inline=False,
         )
-        embed.add_field(name="!plist", value="あなたのタイマー設定一覧を表示します。\n短縮形: `!pl`", inline=False)
-        embed.add_field(name="!remove @user", value="指定ユーザーを加算対象から削除します。\n短縮形: `!rm`", inline=False)
+        embed.add_field(
+            name="!remove @user",
+            value="指定ユーザーを加算対象から削除します。\n短縮形: `!rm`",
+            inline=False,
+        )
         embed.add_field(
             name="!stats [timer_name]",
-            value="記録を表示します。\n"
-            "名前省略時: 全タイマーの作業時間一覧\n"
-            "名前指定時: そのタイマーの詳細統計\n"
-            "短縮形: `!st`",
-            inline=False,
-        )
-        embed.add_field(
-            name="!pconfig <name> [作業] [小休憩] [長休憩] [頻度]",
-            value="名前付きタイマーの設定を作成・上書きします。\n"
-            "デフォルト値: `25 5 15 4`\n"
-            "例: `!pconfig work 50 10 20 4`",
-            inline=False,
-        )
-        embed.add_field(
-            name="!pdel <name>",
-            value="指定タイマーを削除します。記録が残っているタイマーは削除できません。",
+            value=(
+                "記録を表示します。\n"
+                "名前省略時: 全タイマーの作業時間一覧\n"
+                "名前指定時: そのタイマーの詳細統計\n"
+                "短縮形: `!st`"
+            ),
             inline=False,
         )
         embed.add_field(name="!reset", value="あなたの統計をリセットします。", inline=False)
