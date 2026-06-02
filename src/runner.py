@@ -14,7 +14,20 @@ from storage import StatsRepository
 from views import JoinView, PomoView
 
 
+"""
+ランタイムでポモドーロの実行を制御するランナー実装。
+
+`PomoRunner` は1つの `PomoSession` を受け取り、実際のワーク/休憩サイクル、
+音声通知、参加者集計、UIの更新などを担当します。
+"""
+
+
 class PomoRunner:
+    """セッション実行のメインロジックを提供するクラス。
+
+    各フェーズ（作業/休憩）をループし、必要に応じて音声通知や
+    結果送信、統計更新を行います。
+    """
     NO_MEMBER_GRACE_SECONDS = 12
     VC_DOWN_GRACE_SECONDS = 12
 
@@ -29,6 +42,7 @@ class PomoRunner:
         author_id: int,
         timer_id: int,
     ):
+        # ランナーの初期化: セッションやVC、コンテキスト等を保持する
         self.session = session
         self.vc = voice_client
         self.ctx = ctx
@@ -41,6 +55,7 @@ class PomoRunner:
         self._vc_down_since: float | None = None
 
     async def _send_result(self) -> None:
+        # セッション結果をEmbedでチャンネルに送信する
         """セッション終了時にリザルトをEmbedで送信する。"""
 
         embed = discord.Embed(
@@ -72,6 +87,7 @@ class PomoRunner:
         await self.ctx.send(embed=embed)
 
     async def run(self) -> None:
+        # セッションのメインループを実行する
         self.session.active = True
         self.session.stop_requested = False
         self.manager.update_index(self.author_id)
@@ -177,6 +193,7 @@ class PomoRunner:
             await self.vc.disconnect()
 
     async def run_phase(self, duration_min: int, label: str, emoji: str) -> bool:
+        # 指定分数のフェーズ（作業/休憩）を実行する
         if duration_min <= 0:
             return True
 
@@ -226,6 +243,7 @@ class PomoRunner:
         return True
 
     async def _wait_tick(self, view: PomoView) -> str:
+        # 1秒単位の待機処理。状態に応じて文字列（paused/tick等）を返す
         if self.session.stop_requested:
             return "no_members"
 
@@ -265,6 +283,7 @@ class PomoRunner:
         return "tick"
 
     def _has_members_with_grace(self) -> bool:
+        # 在席判定（猶予時間あり）を行う
         if self.session.has_active_members(self.vc):
             self._no_member_since = None
             return True
@@ -277,6 +296,7 @@ class PomoRunner:
         return (now - self._no_member_since) < self.NO_MEMBER_GRACE_SECONDS
 
     async def _refresh_panels(self, label: str) -> None:
+        # 参加パネルを更新して新しいJoinViewを投稿する
         if self.session.join_view and self.session.join_msg:
             for child in self.session.join_view.children:
                 if isinstance(child, Button):
@@ -295,6 +315,7 @@ class PomoRunner:
         self.session.join_msg = join_msg
 
     async def _play_voice(self, text: str, volume: float = 1.0) -> None:
+        # テキストを音声に変換してVCで再生する（ミュートや未接続はスキップ）
         if self.session.muted or not self.vc or not self.vc.is_connected():
             return
 
@@ -302,6 +323,7 @@ class PomoRunner:
             await self.ctx.send("⚠️ VOICEVOX の音声生成に失敗したため、通知をスキップしました。")
 
     def _phase_start_text(self, duration_min: int, label: str, emoji: str) -> str:
+        # フェーズ開始時のメッセージテキストを返す
         if emoji == "🍅":
             return (
                 f"🍅 **<@{self.session.host_id}> の{label} 開始！** ({duration_min}分)\n"
@@ -311,6 +333,7 @@ class PomoRunner:
         return f"{emoji} **<@{self.session.host_id}> の{label}！** ({duration_min}分)\nリラックスしましょう！"
 
     def _phase_tick_text(self, remaining_min: int, label: str, emoji: str) -> str:
+        # 残り時間表示用のメッセージテキストを返す
         if emoji == "🍅":
             return f"🍅 **残り {remaining_min} 分** ({label})\n集中しましょう！"
         return f"{emoji} **<@{self.session.host_id}> の残り {remaining_min} 分** ({label})\nリラックスしましょう！"

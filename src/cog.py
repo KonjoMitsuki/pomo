@@ -14,7 +14,21 @@ from storage import StatsRepository
 from views import JoinView
 
 
+"""
+Discordのコマンド群を定義するCog。
+
+`PomoCog` はユーザーコマンド（`!pomo` など）を受け取り、セッション作成、
+タイマー設定、統計表示、参加者操作などをハンドルします。
+"""
+
+
 class PomoCog(commands.Cog):
+    """Botのコマンドとイベントハンドラをまとめた Cog クラス。
+
+    - `pomo`: ポモドーロを開始する主要コマンド
+    - `tconfig`, `tlist`, `pdel` などのタイマー管理コマンド
+    - voice state の更新を監視してホスト移譲などを行うリスナー
+    """
     def __init__(
         self,
         bot: commands.Bot,
@@ -22,12 +36,14 @@ class PomoCog(commands.Cog):
         stats: StatsRepository,
         audio: AudioPlayer,
     ):
+        # Cogの初期化: botやセッション管理、ストレージ、音声プレイヤーを保持
         self.bot = bot
         self.manager = manager
         self.stats = stats
         self.audio = audio
 
     async def _resolve_owned_session(self, user_id: int) -> tuple[int, PomoSession] | None:
+        # ユーザーが所有する（ホストである）セッションを解決する
         session = self.manager.get(user_id)
         if session is None:
             result = self.manager.find_by_user(user_id)
@@ -43,6 +59,7 @@ class PomoCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Botが起動して準備完了したときにログ出力する
         log_action(
             guild_name="-",
             user_name=getattr(self.bot.user, "display_name", None) or getattr(self.bot.user, "name", None),
@@ -51,6 +68,7 @@ class PomoCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):
+        # サーバー参加時のログを出力する
         log_action(
             guild_name=guild.name,
             user_name=getattr(self.bot.user, "display_name", None) or getattr(self.bot.user, "name", None),
@@ -67,6 +85,7 @@ class PomoCog(commands.Cog):
         long_brk: int | None = None,
         interval: int | None = None,
     ):
+        # ポモドーロを開始するコマンド処理
         log_from_context(
             ctx,
             f"!pomo {timer_name}"
@@ -97,6 +116,7 @@ class PomoCog(commands.Cog):
                 await ctx.send("⚠️ 長休憩頻度は1以上で指定してください。")
                 return
         if not ctx.author.voice or not ctx.author.voice.channel:
+            # ボイスチャンネルに参加していなければエラーを返す
             await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
             return
 
@@ -123,6 +143,7 @@ class PomoCog(commands.Cog):
                 return
 
         log_action(
+            # 成功した接続をログに残す
             guild_name=getattr(ctx.guild, "name", None),
             user_name=ctx.author.display_name,
             action=f"VC接続成功: {target_channel.name}",
@@ -201,6 +222,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(aliases=["t"])
     async def timer(self, ctx):
+        # 現在のタイマー情報を表示するコマンド
         log_from_context(ctx, "!timer")
         result = self.manager.find_by_user(ctx.author.id)
         if result is None:
@@ -263,6 +285,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def add(self, ctx, user: discord.Member):
+        # 指定ユーザーを自分のタイマー対象に追加するコマンド
         log_from_context(ctx, f"!add {user.display_name}")
         if user.bot:
             await ctx.send("⚠️ Botは加算対象に追加できません。")
@@ -287,6 +310,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="tlist", aliases=["tls", "tl"])
     async def tlist(self, ctx):
+        # 自分のタイマー一覧を表示するコマンド
         log_from_context(ctx, "!tlist")
         timers = await self.stats.list_timers(ctx.author.id, ctx.guild.id if ctx.guild else None)
         if not timers:
@@ -309,6 +333,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="tconfig", aliases=["tc"])
     async def tconfig(self, ctx, name: str, work_min: int = 25, short_brk: int = 5, long_brk: int = 15, interval: int = 4):
+        # タイマー設定を作成/更新するコマンド
         log_from_context(ctx, f"!tconfig {name} {work_min} {short_brk} {long_brk} {interval}")
         await self.stats.upsert_user(ctx.author.id, ctx.author.display_name)
         await self.stats.upsert_timer(
@@ -341,6 +366,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def pdel(self, ctx, name: str):
+        # タイマーを削除するコマンド
         log_from_context(ctx, f"!pdel {name}")
         result = await self.stats.delete_timer(ctx.author.id, name, ctx.guild.id if ctx.guild else None)
         if result:
@@ -354,6 +380,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(aliases=["rm"])
     async def remove(self, ctx, user: discord.Member):
+        # 自分のタイマー対象からユーザーを削除するコマンド
         log_from_context(ctx, f"!remove {user.display_name}")
         if user.bot:
             await ctx.send("⚠️ Botは加算対象に含まれていません。")
@@ -375,6 +402,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="stats", aliases=["st"])
     async def stats_cmd(self, ctx, timer_name: str = ""):
+        # 統計を表示するコマンド（タイマー名指定でそのタイマーの詳細）
         log_from_context(ctx, f"!stats {timer_name}".strip())
 
         if not timer_name:
@@ -410,6 +438,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def reset(self, ctx):
+        # 自分の統計をリセットするコマンド
         log_from_context(ctx, "!reset")
         before = await self.stats.reset_stats(ctx.author.id)
         if before is None:
@@ -424,6 +453,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def mute(self, ctx):
+        # 通知音のミュート切替コマンド
         log_from_context(ctx, "!mute")
         resolved = await self._resolve_owned_session(ctx.author.id)
         if resolved is None:
@@ -439,6 +469,7 @@ class PomoCog(commands.Cog):
 
     @commands.command()
     async def test(self, ctx):
+        # 音声再生をテストするコマンド
         log_from_context(ctx, "!test")
         if not ctx.author.voice:
             await ctx.send("ボイスチャンネルに入ってからコマンドを打ってください。")
@@ -459,6 +490,7 @@ class PomoCog(commands.Cog):
 
     @commands.command(name="help", aliases=["h"])
     async def help_command(self, ctx):
+        # ヘルプメッセージを表示するコマンド
         log_from_context(ctx, "!help")
         embed = discord.Embed(
             title="🍅 Pomodoro Bot コマンド一覧",
@@ -556,6 +588,7 @@ class PomoCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        # ボイス状態の変更を監視し、ホスト移譲や参加者の退出を処理する
         if before.channel == after.channel:
             return
         if before.channel is None:

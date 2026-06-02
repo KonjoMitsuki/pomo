@@ -19,7 +19,22 @@ ASSETS_DIR = BASE_DIR / "assets"
 DB_FILE = str(ASSETS_DIR / "pomo.db")
 
 
+"""
+アプリケーションのエントリポイントと環境チェック。
+
+このファイルはBotの起動処理を提供します。主な役割:
+- 依存関係の確認（音声関連のパッケージが揃っているか）
+- データベース/アセットディレクトリの初期化
+- `PomoCog` を登録してBotを起動
+"""
+
+
 def has_voice_runtime_dependencies(strict: bool = True) -> bool:
+    # 音声再生に必要なパッケージがインストールされているか確認する
+    """音声再生に必要なランタイム依存がインストールされているか確認します。
+
+    `strict=True` の場合、依存が不足すると `False` を返します。
+    """
     missing = []
     if importlib.util.find_spec("nacl") is None:
         missing.append("PyNaCl")
@@ -38,6 +53,12 @@ def has_voice_runtime_dependencies(strict: bool = True) -> bool:
 
 
 async def main():
+    # Bot を初期化して起動するメイン処理
+    """Bot を起動するメイン関数。
+
+    環境変数 `DISCORD_BOT_TOKEN` が必要です。データベースを初期化し、
+    `PomoCog` を Bot に登録して起動します。
+    """
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print("エラー: DISCORD_BOT_TOKEN 環境変数が設定されていません。")
