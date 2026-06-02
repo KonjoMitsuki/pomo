@@ -78,3 +78,34 @@ python src/timer.py
 - `src/timer.py`: `AudioPlayer()` 初期化に変更。
 - ドキュメント更新: `README.md`, `documents/manual.md`, `documents/specification.md`。
 
+
+## 付録: 生成AI（会話録）からの補足要約
+ユーザー提供の生成AIとの会話録（`documents/report/voicevox導入会話録`）を踏まえ、以下の点を本報告へ追記します。
+
+- 実装方式の比較
+  - 動的生成方式（今回採用）: フェーズごとに VOICEVOX API を呼び出して音声を生成する方式。動的なセリフが可能だが、VOICEVOX が稼働していないと再生できない点に注意。
+  - 事前生成方式: 起動前に音声ファイルを用意しておく方式。起動時のラグやVOICEVOX稼働依存を避けられるが、動的な文言は難しい。
+
+- VOICEVOX の起動方法（会話録の推奨）
+  - デスクトップアプリを起動する方法（手軽）。ただしアプリを終了するとAPIサーバーも止まる点に注意。
+  - Docker コンテナでエンジンを常駐させる方法（サーバ運用に推奨）。会話録で紹介された起動例:
+
+```bash
+docker pull voicevox/voicevox_engine:cpu-latest
+docker run -d --name voicevox-pomo -p 127.0.0.1:50021:50021 --restart unless-stopped voicevox/voicevox_engine:cpu-latest
+```
+
+- スピーカーID（会話録より）
+  - `47` = ナースロボ＿タイプＴ（ノーマル） — 本実装でデフォルトに設定済み。
+  - 他の性格（例: 48,49,50）へ変更可能である旨の補足あり。
+
+- サーバ運用上の注意（DigitalOcean等の Droplet）
+  - VOICEVOX エンジンは音声合成時にメモリを多く消費するため、1GB 未満の環境では不安定。最低2GB、理想は4GB以上を推奨。
+  - メモリ不足の場合はスワップ領域の追加やインスタンスタイプの見直しを検討する必要がある。
+
+- 実装のヒント（会話録より）
+  - `audio_query` で取得した `query_json` の `speedScale` や `pitchScale` を書き換えれば、Bot 側で話速や音高さを調整可能。
+  - 生成失敗時のスキップ、リトライや退避行動（無音で進行する等）の実装が推奨される。
+
+本付録は、作業時に参照した生成AIの提案内容を要約したもので、実装方針や運用上の注意点の補完を目的としています。
+
