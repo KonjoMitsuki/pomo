@@ -16,7 +16,6 @@ from storage import StatsRepository
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = BASE_DIR / "assets"
-SOUND_FILE = str(ASSETS_DIR / "ding.mp3")
 DB_FILE = str(ASSETS_DIR / "pomo.db")
 
 
@@ -56,7 +55,7 @@ async def main():
     await stats.init()
 
     manager = SessionManager()
-    audio = AudioPlayer(SOUND_FILE)
+    audio = AudioPlayer()
 
     intents = discord.Intents.default()
     intents.message_content = True

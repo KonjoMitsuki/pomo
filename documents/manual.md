@@ -9,7 +9,7 @@
 - Python 3.9 以上
 - Discord Bot Token（環境変数: `DISCORD_BOT_TOKEN`）
 - `ffmpeg` が PATH 上にあること
-- `assets/ding.mp3` を配置
+- VOICEVOX エンジンが `http://127.0.0.1:50021` で起動していること
 - `assets/pomo.db` は自動生成
 
 ## セットアップ
@@ -18,7 +18,7 @@
 2. 依存関係をインストールします。
 
 ```bash
-pip install discord.py aiosqlite
+pip install discord.py aiosqlite aiohttp
 ```
 
 3. トークンを設定します。
@@ -27,7 +27,7 @@ pip install discord.py aiosqlite
 export DISCORD_BOT_TOKEN="your_token_here"
 ```
 
-4. `assets/ding.mp3` を配置します。
+4. VOICEVOX エンジンを起動します。
 5. 起動します。
 
 ```bash
@@ -102,7 +102,7 @@ python src/timer.py
 ## ヒント
 
 - ボイスに接続できない場合は、権限とサーバー設定を確認してください。
-- 音が鳴らない場合は、`ffmpeg` の導入と `assets/ding.mp3` の配置を確認してください。
+- 音が鳴らない場合は、`ffmpeg` の導入と VOICEVOX エンジンの起動を確認してください。
 - データベース `assets/pomo.db` は自動生成されます。
 - 内部では `users` / `timers` / `sessions` / `session_members` の4テーブルで記録を管理します。
 - `!stats` と `!reset` は、個別のセッション記録を集計した結果を表示します。

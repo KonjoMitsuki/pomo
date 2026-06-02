@@ -12,6 +12,7 @@ Discord のボイスチャンネルで使えるポモドーロタイマー Bot �
 - 一時停止 / 再開 / 終了ボタン
 - 統計保存（SQLite）
 - 通知音のミュート切り替え（`!mute`）
+- VOICEVOX による動的音声アナウンス
 
 ## ディレクトリ構成
 
@@ -20,8 +21,8 @@ pomo/
 ├─ README.md
 ├─ start_pomo.sh
 ├─ assets/
-│  ├─ ding.mp3
-│  └─ pomo.db
+│  ├─ pomo.db
+│  └─ voicevox_temp.wav  # 実行時に生成される一時ファイル
 ├─ documents/
 │  ├─ manual.md
 │  ├─ specification.md
@@ -39,10 +40,11 @@ pomo/
 ## 依存関係
 
 ```bash
-pip install discord.py aiosqlite
+pip install discord.py aiosqlite aiohttp
 ```
 
 音声通知のため FFmpeg も必要です。
+VOICEVOX エンジンは `http://127.0.0.1:50021` で起動しておいてください。
 
 ```bash
 # Ubuntu / Debian
@@ -110,7 +112,7 @@ python src/timer.py
 
 ### `!test`
 
-VC で通知音再生テストを行います。
+VC で VOICEVOX 音声再生テストを行います。
 
 ### `!pconfig` / `!pdel` / `!help`
 
@@ -154,7 +156,7 @@ VC で通知音再生テストを行います。
 
 ```bash
 ffmpeg -version
-ls -l assets/ding.mp3
+curl -s http://127.0.0.1:50021/version
 ```
 
 その後、`!test` で確認してください。

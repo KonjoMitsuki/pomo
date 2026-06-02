@@ -101,6 +101,12 @@ class PomoRunner:
             self.session.session_count += 1
             label = f"セッション {self.session.session_count}"
 
+            work_voice = (
+                f"第 {self.session.session_count} セットの作業を開始します。"
+                f"時間は {self.session.work_min} 分間です。集中していきましょう。"
+            )
+            await self._play_voice(work_voice, volume=1.0)
+
             ok = await self.run_phase(self.session.work_min, label, "🍅")
             if not ok:
                 await self.stats.end_session(self.session_id, self.session.session_count)
@@ -109,10 +115,10 @@ class PomoRunner:
 
             active_ids = self.session.get_vc_active_ids(self.vc)
             await self.stats.add_completed_session(self.session_id, active_ids)
+            is_long_break = (self.session.session_count % self.session.interval == 0)
+            break_time = self.session.long_brk if is_long_break else self.session.short_brk
+            break_type = "長休憩" if is_long_break else "小休憩"
             if self.session.pomo_msg:
-                is_long_break = (self.session.session_count % self.session.interval == 0)
-                break_time = self.session.long_brk if is_long_break else self.session.short_brk
-                break_type = "長休憩" if is_long_break else "小休憩"
                 await self.session.pomo_msg.edit(
                     content=(
                         f"🎉 **<@{self.session.host_id}> のセッション {self.session.session_count} 完了！** "
@@ -122,15 +128,12 @@ class PomoRunner:
                     view=None,
                 )
 
-            if not self.session.muted and self.vc.is_connected():
-                if self.audio.file_exists():
-                    await self.audio.play(self.vc, volume=1.0)
-                else:
-                    await self.ctx.send("⚠️ 音声ファイル (assets/ding.mp3) が見つかりませんでした。")
-
-            is_long_break = (self.session.session_count % self.session.interval == 0)
-            break_time = self.session.long_brk if is_long_break else self.session.short_brk
-            break_type = "長休憩" if is_long_break else "小休憩"
+            if break_time > 0:
+                break_voice = (
+                    f"セッション {self.session.session_count} 完了です。"
+                    f"これより {break_time} 分間の {break_type} に入ります。"
+                )
+                await self._play_voice(break_voice, volume=1.0)
             break_emoji = "☕" if is_long_break else "💤"
 
             if break_time > 0:
@@ -145,9 +148,6 @@ class PomoRunner:
                         view=None,
                     )
 
-                if not self.session.muted and self.vc.is_connected() and self.audio.file_exists():
-                    await self.audio.play(self.vc, volume=1.5)
-
             await asyncio.sleep(2)
 
         if ended_normally:
@@ -155,6 +155,11 @@ class PomoRunner:
                 guild_name=getattr(self.ctx.guild, "name", None),
                 user_name=self.ctx.author.display_name,
                 action=f"セッション正常終了: {self.session.session_count}回完了",
+            )
+
+            await self._play_voice(
+                "予定されていたすべてのセッションが終了しました。大変お疲れ様でした。",
+                volume=1.0,
             )
 
         if self.session.control_msg:
@@ -288,6 +293,13 @@ class PomoRunner:
         )
         self.session.join_view = join_view
         self.session.join_msg = join_msg
+
+    async def _play_voice(self, text: str, volume: float = 1.0) -> None:
+        if self.session.muted or not self.vc or not self.vc.is_connected():
+            return
+
+        if not await self.audio.play_voice(self.vc, text, volume=volume):
+            await self.ctx.send("⚠️ VOICEVOX の音声生成に失敗したため、通知をスキップしました。")
 
     def _phase_start_text(self, duration_min: int, label: str, emoji: str) -> str:
         if emoji == "🍅":

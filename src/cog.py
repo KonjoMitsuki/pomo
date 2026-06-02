@@ -452,17 +452,10 @@ class PomoCog(commands.Cog):
         )
         await asyncio.sleep(1.5)
 
-        if self.audio.file_exists():
-            print("[DEBUG] ファイルを検出しました。再生を開始します...")
-            vc.play(discord.FFmpegPCMAudio(self.audio.sound_file))
-            while vc.is_playing():
-                await asyncio.sleep(1)
-            print("[DEBUG] 再生が終了しました。")
-            await asyncio.sleep(1.0)
-            await vc.disconnect()
-        else:
-            await ctx.send("❌ assets/ding.mp3 が見つかりません！")
-            await vc.disconnect()
+        test_text = "業務連絡。ナースロボ、タイプＴです。音声出力を確認しました。システム正常です。"
+        if not await self.audio.play_voice(vc, test_text):
+            await ctx.send("⚠️ VOICEVOX の音声生成に失敗したため、音声テストをスキップしました。")
+        await vc.disconnect()
 
     @commands.command(name="help", aliases=["h"])
     async def help_command(self, ctx):

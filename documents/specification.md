@@ -15,7 +15,7 @@
 現在の実体は次の3区分で管理する。
 
 - `src/`: Pythonソースコード
-- `assets/`: `ding.mp3` と `pomo.db`
+- `assets/`: `pomo.db` と、実行時生成の `voicevox_temp.wav`
 - `documents/`: ドキュメント類
 
 ## 3. 実行前提
@@ -25,8 +25,9 @@
 - Python 3系
 - discord.py
 - aiosqlite
+- aiohttp
 - FFmpeg 実行環境
-- 通知音ファイル `assets/ding.mp3`
+- VOICEVOX エンジン (`http://127.0.0.1:50021`)
 
 ### 3.2 環境変数
 
@@ -56,7 +57,7 @@
 - `src/timer.py`: エントリーポイント。環境変数検証、依存チェック、Bot初期化
 - `src/session.py`: セッション状態 `PomoSession` と管理 `SessionManager`
 - `src/storage.py`: SQLite永続化 `StatsRepository`
-- `src/audio.py`: 通知音再生 `AudioPlayer`
+- `src/audio.py`: VOICEVOX 音声生成・再生 `AudioPlayer`
 - `src/views.py`: Discord UIボタン `PomoView` と `JoinView`
 - `src/runner.py`: 実行ループ `PomoRunner`
 - `src/cog.py`: コマンド/イベント `PomoCog`
