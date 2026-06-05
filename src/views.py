@@ -8,6 +8,11 @@ from session import PomoSession, SessionManager
 
 
 class PomoView(View):
+    """タイマー実行中に表示される操作パネル。
+
+    - 一時停止 / 再開 / 終了 ボタンを提供し、押下されたときに `session` の状態を更新します。
+    - `interaction_check` で参加者以外の操作を拒否します。
+    """
     def __init__(self, session: PomoSession):
         super().__init__(timeout=None)
         self.session = session
@@ -15,10 +20,12 @@ class PomoView(View):
         self.stopped = False
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # ボタン操作が許可されたユーザー（参加者のみ）か判定する
         return interaction.user.id in self.session.get_all_member_ids()
 
     @discord.ui.button(label="一時停止", style=discord.ButtonStyle.secondary, emoji="⏸️")
     async def pause_button(self, interaction: discord.Interaction, button: Button):
+        # 一時停止ボタンが押されたときの処理
         log_from_interaction(interaction, "ボタン: 一時停止")
         self.paused = True
         button.disabled = True
@@ -27,6 +34,7 @@ class PomoView(View):
 
     @discord.ui.button(label="再開", style=discord.ButtonStyle.success, emoji="▶️", disabled=True)
     async def resume_button(self, interaction: discord.Interaction, button: Button):
+        # 再開ボタンが押されたときの処理
         log_from_interaction(interaction, "ボタン: 再開")
         self.paused = False
         button.disabled = True
@@ -35,6 +43,7 @@ class PomoView(View):
 
     @discord.ui.button(label="終了", style=discord.ButtonStyle.danger, emoji="⏹️")
     async def stop_button(self, interaction: discord.Interaction, button: Button):
+        # 終了ボタンが押されたときの処理（セッション停止）
         log_from_interaction(interaction, "ボタン: 終了")
         self.stopped = True
         await interaction.response.edit_message(content="⏹️ タイマーを終了しました。", view=None)
@@ -42,6 +51,11 @@ class PomoView(View):
 
 
 class JoinView(View):
+    """参加用の操作パネル。
+
+    - `参加` ボタンで `session.add_member` を呼び、参加者リストに追加します。
+    - `退出` ボタンで退出処理を行い、ホスト退出時はホスト移譲またはセッション終了を行います。
+    """
     def __init__(self, session: PomoSession, manager: SessionManager, author_id: int):
         super().__init__(timeout=None)
         self.session = session
@@ -50,6 +64,7 @@ class JoinView(View):
 
     @discord.ui.button(label="参加", style=discord.ButtonStyle.success, emoji="🙋")
     async def join_button(self, interaction: discord.Interaction, button: Button):
+        # 参加ボタンが押されたとき、セッションにユーザーを追加する
         log_from_interaction(interaction, "ボタン: 参加")
         user = interaction.user
         if user.bot:
@@ -63,6 +78,7 @@ class JoinView(View):
 
     @discord.ui.button(label="退出", style=discord.ButtonStyle.secondary, emoji="👋")
     async def leave_button(self, interaction: discord.Interaction, button: Button):
+        # 退出ボタンが押されたとき、参加解除やホスト移譲/終了を行う
         log_from_interaction(interaction, "ボタン: 退出")
         user = interaction.user
 
