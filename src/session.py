@@ -97,6 +97,11 @@ class PomoSession:
                 mentions.append(f"<@{uid}>")
         return " ".join(mentions)
 
+    def reset_members(self) -> None:
+        self.targets.clear()
+        self.join_order = [self.host_id]
+
+
 
 class SessionManager:
     def __init__(self):

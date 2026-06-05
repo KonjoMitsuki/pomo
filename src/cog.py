@@ -138,6 +138,7 @@ class PomoCog(commands.Cog):
         else:
             session = existing
             session.host_id = ctx.author.id
+            session.reset_members()
             session.session_count = 0
             session.active = False
             session.stop_requested = False
@@ -197,6 +198,7 @@ class PomoCog(commands.Cog):
             session.control_msg = None
             session.join_view = None
             session.join_msg = None
+            session.reset_members()
             self.manager.update_index(ctx.author.id)
 
     @commands.command(aliases=["t"])
