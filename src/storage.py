@@ -39,8 +39,8 @@ class StatsRepository:
         - `session_members`: セッション参加ユーザーの作業時間などの集計
         """
         async with aiosqlite.connect(self.db_file) as db:
-        """コンストラクタ。`db_file` は使用するSQLiteファイルのパスです。
-        """
+            """コンストラクタ。`db_file` は使用するSQLiteファイルのパスです。
+            """
             # 古いstatsテーブルがあれば削除（過去仕様の名残）
             await db.execute("DROP TABLE IF EXISTS stats")
 
