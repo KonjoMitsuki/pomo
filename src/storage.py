@@ -8,9 +8,6 @@ DEFAULT_DB_FILE = str(Path(__file__).resolve().parent.parent / "assets" / "pomo.
 """
 デフォルトのDBファイルパス。プロジェクトルートの `assets/pomo.db` を指します。
 """
-"""
-デフォルトのDBファイルパス。プロジェクトルートの `assets/pomo.db` を指します。
-"""
 
 
 class StatsRepository:
@@ -39,8 +36,6 @@ class StatsRepository:
         - `session_members`: セッション参加ユーザーの作業時間などの集計
         """
         async with aiosqlite.connect(self.db_file) as db:
-            """コンストラクタ。`db_file` は使用するSQLiteファイルのパスです。
-            """
             # 古いstatsテーブルがあれば削除（過去仕様の名残）
             await db.execute("DROP TABLE IF EXISTS stats")
 
