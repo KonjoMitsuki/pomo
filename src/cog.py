@@ -222,6 +222,107 @@ class PomoCog(commands.Cog):
             session.reset_members()
             self.manager.update_index(ctx.author.id)
 
+    @commands.command(aliases=["np"])
+    async def normal_pomo(
+        self,
+        ctx,
+        timer_name: str = "original",
+    ):
+        # カウントアップタイマーを開始するコマンド処理
+        log_from_context(ctx, f"!np {timer_name}")
+
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.send("⚠️ ボイスチャンネルに参加してからコマンドを実行してください。")
+            return
+
+        target_channel = ctx.author.voice.channel
+        voice_client = ctx.voice_client
+        if voice_client is None:
+            try:
+                voice_client = await target_channel.connect(reconnect=True)
+            except Exception as e:
+                await ctx.send(f"⚠️ ボイスチャンネルに接続できませんでした: {e}")
+                return
+        else:
+            try:
+                if not voice_client.is_connected():
+                    try:
+                        await voice_client.disconnect(force=True)
+                    except Exception:
+                        pass
+                    voice_client = await target_channel.connect(reconnect=True)
+                elif voice_client.channel != target_channel:
+                    await voice_client.move_to(target_channel)
+            except Exception as e:
+                await ctx.send(f"⚠️ ボイスチャンネル接続の更新に失敗しました: {e}")
+                return
+
+        log_action(
+            guild_name=getattr(ctx.guild, "name", None),
+            user_name=ctx.author.display_name,
+            action=f"VC接続成功 (np): {target_channel.name}",
+        )
+
+        existing = self.manager.get(ctx.author.id)
+        if existing is not None and existing.active:
+            await ctx.send("⚠️ すでにあなたのタイマーが動作中です。")
+            return
+
+        if existing is None:
+            session = self.manager.create(ctx.author.id)
+        else:
+            session = existing
+            session.host_id = ctx.author.id
+            session.reset_members()
+            session.session_count = 0
+            session.active = False
+            session.stop_requested = False
+            self.manager.update_index(ctx.author.id)
+
+        session.timer_name = timer_name
+        session.is_countup = True
+
+        await self.stats.upsert_user(ctx.author.id, ctx.author.display_name)
+
+        guild_id = ctx.guild.id if ctx.guild else None
+        timer = await self.stats.get_timer_by_name(ctx.author.id, timer_name, guild_id)
+        if not timer:
+            await self.stats.upsert_timer(
+                ctx.author.id,
+                timer_name,
+                guild_id,
+                25,
+                5,
+                15,
+                4,
+            )
+            timer = await self.stats.get_timer_by_name(ctx.author.id, timer_name, guild_id)
+
+        if not timer:
+            await ctx.send(f"⚠️ タイマー `{timer_name}` の作成に失敗しました。")
+            try:
+                await voice_client.disconnect()
+            except Exception:
+                pass
+            return
+
+        timer_id = timer["id"]
+
+        runner = PomoRunner(session, voice_client, ctx, self.stats, self.audio, self.manager, ctx.author.id, timer_id)
+        try:
+            await runner.run()
+        finally:
+            session.active = False
+            session.stop_requested = False
+            session.is_countup = False
+            session.pomo_view = None
+            session.pomo_msg = None
+            session.control_msg = None
+            session.join_view = None
+            session.join_msg = None
+            session.reset_members()
+            self.manager.update_index(ctx.author.id)
+
     @commands.command(aliases=["t"])
     async def timer(self, ctx):
         # 現在のタイマー情報を表示するコマンド
@@ -508,6 +609,17 @@ class PomoCog(commands.Cog):
                 "タイマー名を省略すると `original` を使用します。\n"
                 "例: `!p work` → `work` タイマーで起動\n"
                 "例: `!p work 50 10 20 4` → `work` を設定更新してそのまま起動\n"
+                "※事前にボイスチャンネルに参加してください。"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="!np [timer_name]",
+            value=(
+                "カウントアップタイマーを開始します。\n"
+                "手動停止するまで経過時間を記録し続けます。\n"
+                "タイマー名を省略すると `original` を使用します。\n"
+                "例: `!np work` → `work` タイマーで起動\n"
                 "※事前にボイスチャンネルに参加してください。"
             ),
             inline=False,

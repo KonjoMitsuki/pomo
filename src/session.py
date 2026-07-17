@@ -42,6 +42,7 @@ class PomoSession:
     muted: bool = False
     active: bool = False
     stop_requested: bool = False
+    is_countup: bool = False
     # UI関連
     pomo_view: "PomoView | None" = field(default=None, repr=False)
     pomo_msg: "discord.Message | None" = field(default=None, repr=False)

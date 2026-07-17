@@ -98,6 +98,10 @@ class PomoRunner:
         
         guild_id = self.ctx.guild.id if self.ctx.guild else None
         self.session_id = await self.stats.start_session(self.timer_id, guild_id)
+
+        if self.session.is_countup:
+            await self._run_countup()
+            return
         
         self.session.control_msg = await self.ctx.send(
             f"🛑 **<@{self.session.host_id}> のタイマー**\n"
@@ -241,6 +245,76 @@ class PomoRunner:
                 )
 
         return True
+
+    async def _run_countup(self) -> None:
+        # カウントアップモードの実行処理
+        """カウントアップタイマーを実行する。手動停止まで無限に経過時間を加算する。"""
+        self.session.control_msg = await self.ctx.send(
+            f"🛑 **<@{self.session.host_id}> のタイマー**\n"
+            "タイマーを終了する場合は、⏹️ 終了ボタンを押すか、ボイスチャンネルから退出してください。"
+        )
+        await self._refresh_panels("開始")
+
+        view = PomoView(self.session)
+        self.session.pomo_view = view
+        self.session.pomo_msg = await self.ctx.send(
+            f"⏱️ **<@{self.session.host_id}> のカウントアップタイマー開始！**\n"
+            f"対象: {self.session.get_target_line()}\n"
+            "経過時間: 0分",
+            view=view,
+        )
+
+        elapsed_seconds = 0
+        try:
+            while True:
+                state = await self._wait_tick(view)
+                if state == "stopped":
+                    if self.session.control_msg:
+                        await self.session.control_msg.edit(content="⏹️ タイマーを終了しました。お疲れ様でした！")
+                    if self.vc and self.vc.is_connected():
+                        await self.vc.disconnect()
+                    break
+                if state == "no_members":
+                    if self.session.pomo_msg:
+                        await self.session.pomo_msg.edit(content="⏹️ ユーザーが退出したため終了しました。", view=None)
+                    if self.vc and self.vc.is_connected():
+                        await self.vc.disconnect()
+                    break
+                if state == "paused":
+                    continue
+                if state == "wait_members":
+                    continue
+                if state == "wait_vc":
+                    continue
+
+                elapsed_seconds += 1
+                if elapsed_seconds % 60 == 0:
+                    elapsed_minutes = elapsed_seconds // 60
+                    active_ids = self.session.get_vc_active_ids(self.vc)
+                    await self.stats.add_work_minutes(self.session_id, active_ids, 1)
+                    for uid in active_ids:
+                        self.session.session_work[uid] = self.session.session_work.get(uid, 0) + 1
+                    if self.session.pomo_msg:
+                        await self.session.pomo_msg.edit(
+                            content=(
+                                f"⏱️ **<@{self.session.host_id}> のカウントアップタイマー**\n"
+                                f"経過時間: {elapsed_minutes}分"
+                            ),
+                            view=view,
+                        )
+        finally:
+            await self.stats.end_session(self.session_id, self.session.session_count)
+            await self._send_result()
+            if self.session.control_msg:
+                total_minutes = elapsed_seconds // 60
+                await self.session.control_msg.edit(
+                    content=(
+                        f"🎉 **<@{self.session.host_id}> のタイマー終了！** "
+                        f"合計 {total_minutes} 分作業しました。お疲れ様でした！"
+                    )
+                )
+            if self.vc and self.vc.is_connected():
+                await self.vc.disconnect()
 
     async def _wait_tick(self, view: PomoView) -> str:
         # 1秒単位の待機処理。状態に応じて文字列（paused/tick等）を返す
